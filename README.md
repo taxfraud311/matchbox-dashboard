@@ -19,7 +19,7 @@ Everything is set up in a local web page on the Mac (the manager). No accounts a
 
 ## Download
 
-Get **Matchbox-Dashboard-macOS.zip** from the [latest release](https://github.com/taxfraud311/matchbox-dashboard/releases/latest). The release notes walk through the first launch: the app isn't notarized, so macOS asks you to allow it once under **System Settings › Privacy & Security**. Then follow *Tablet setup* below. Building from source is only needed if you want to change it.
+Get the **Matchbox-Dashboard-…-macOS.zip** file from the [latest release](https://github.com/taxfraud311/matchbox-dashboard/releases/latest). The release notes walk through the first launch: the app isn't notarized, so macOS asks you to allow it once under **System Settings › Privacy & Security**. Then follow *Tablet setup* below. Building from source is only needed if you want to change it.
 
 ## Pieces
 
