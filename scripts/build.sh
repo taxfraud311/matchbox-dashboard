@@ -2,6 +2,7 @@
 # Builds the Fire tablet APK and the Matchbox Dashboard.app menu-bar app into ./build
 #   ./scripts/build.sh            build both
 #   ./scripts/build.sh --install  also copy Matchbox Dashboard.app to /Applications and launch it
+#   UNIVERSAL=1 ./scripts/build.sh   Apple silicon + Intel binary (used for GitHub releases)
 # (The Swift package, bundle ID, Android package and settings folder keep their original "Plinth" names.)
 set -euo pipefail
 ROOT="${0:A:h:h}"
@@ -19,8 +20,13 @@ rm -f "$OUT/Plinth.apk"
 cp "$CACHE/android/app/build/outputs/apk/debug/app-debug.apk" "$OUT/MatchboxDashboard.apk"
 
 echo "▸ Building Mac app…"
-( cd "$ROOT/mac" && swift build -c release --scratch-path "$CACHE/swift" > "$CACHE/swift-build.log" 2>&1 ) || { grep -E "error" "$CACHE/swift-build.log" | head -20; echo "✗ Swift build failed (full log: $CACHE/swift-build.log)"; exit 1; }
-BIN="$CACHE/swift/release/Plinth"
+if [[ "${UNIVERSAL:-}" == 1 ]]; then   # release builds: one binary for Apple silicon and Intel
+  ( cd "$ROOT/mac" && swift build -c release --arch arm64 --arch x86_64 --scratch-path "$CACHE/swift-universal" > "$CACHE/swift-build.log" 2>&1 ) || { grep -E "error" "$CACHE/swift-build.log" | head -20; echo "✗ Swift build failed (full log: $CACHE/swift-build.log)"; exit 1; }
+  BIN="$CACHE/swift-universal/out/Products/Release/Plinth"
+else
+  ( cd "$ROOT/mac" && swift build -c release --scratch-path "$CACHE/swift" > "$CACHE/swift-build.log" 2>&1 ) || { grep -E "error" "$CACHE/swift-build.log" | head -20; echo "✗ Swift build failed (full log: $CACHE/swift-build.log)"; exit 1; }
+  BIN="$CACHE/swift/release/Plinth"
+fi
 [[ -x "$BIN" ]] || { echo "Swift build failed"; exit 1; }
 
 NAME="Matchbox Dashboard"
@@ -45,7 +51,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleExecutable</key><string>$NAME</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.0</string>
+  <key>CFBundleShortVersionString</key><string>1.0.0</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
