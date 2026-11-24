@@ -15,9 +15,11 @@ Everything is set up in a local web page on the Mac (the manager). No accounts a
 
 - A Mac running macOS 14 or later. Developed on an Apple silicon Mac mini.
 - An Amazon Fire tablet. The layout is designed for the 12th‑gen Fire 7 (1024×600) and scales on other screens.
-- To build: Xcode command-line tools, the Android SDK (platform 34) and JDK 17. With Homebrew: `brew install openjdk@17 android-platform-tools` plus the Android SDK from Android Studio or `brew install --cask android-commandlinetools`.
+- To build from source: Xcode command-line tools, the Android SDK (platform 34) and JDK 17. With Homebrew: `brew install openjdk@17 android-platform-tools` plus the Android SDK from Android Studio or `brew install --cask android-commandlinetools`.
 
-There are no prebuilt downloads yet: clone the repository and build it (below).
+## Download
+
+Get **Matchbox-Dashboard-macOS.zip** from the [latest release](https://github.com/taxfraud311/matchbox-dashboard/releases/latest). The release notes walk through the first launch: the app isn't notarized, so macOS asks you to allow it once under **System Settings › Privacy & Security**. Then follow *Tablet setup* below. Building from source is only needed if you want to change it.
 
 ## Pieces
 
