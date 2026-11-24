@@ -726,8 +726,10 @@
       .then(function (res) {
         var s = res[0], m = res[1];
         var devs = (s.adb && s.adb.devices) || [], ready = devs.filter(function (d) { return d.state === "device"; });
+        var others = ready.filter(function (d) { return !d.eligible; });
         ready = ready.filter(function (d) { return d.eligible; });
         var usb = $("#usb-status"), hint = $("#usb-hint");
+        if (!others.length || ready.length) hint.removeAttribute("data-k");
         if (!s.adb || !s.adb.adbPath) {
           usb.innerHTML = '<span class="dot warn"></span>adb not installed';
           hint.innerHTML = "Install with <code>brew install android-platform-tools</code> for USB mode";
@@ -742,9 +744,19 @@
         } else if (devs.some(function (d) { return d.state === "unauthorized"; })) {
           usb.innerHTML = '<span class="dot warn"></span>Waiting for permission';
           hint.textContent = "Tap “Allow” on the tablet’s USB debugging prompt";
+        } else if (others.length) {
+          // Android devices other than Fire tablets wait to be picked, so phones and TV boxes are left alone.
+          usb.innerHTML = '<span class="dot warn"></span>' + esc(friendly(others[0].model)) + " found";
+          var key = others.map(function (d) { return d.serial; }).join(",");
+          if (hint.getAttribute("data-k") !== key) {
+            hint.setAttribute("data-k", key);
+            hint.innerHTML = "Not set up yet. Choose the tablet to show the display on: " + others.map(function (d) {
+              return '<button class="btn small use-dev" data-serial="' + esc(d.serial) + '">Use ' + esc(friendly(d.model)) + "</button>";
+            }).join(" ");
+          }
         } else {
           usb.innerHTML = '<span class="dot"></span>No tablet on USB';
-          hint.textContent = "Connect the Fire tablet with a USB cable (USB debugging on)";
+          hint.textContent = "Connect your Android tablet with a USB cable (USB debugging on)";
         }
         $("#mode-status").textContent = (s.theme === "night" ? "Night" : "Day") + " · Mac is in " + (s.macDark ? "Dark" : "Light") + " mode";
         var ips = (s.addresses || []).map(function (a) { return "http://" + a.ip + ":" + s.port; });
@@ -771,6 +783,15 @@
       .catch(function () { $("#usb-status").textContent = "Matchbox Dashboard isn’t responding"; })
       .then(function () { setTimeout(pollStatus, 2000); });
   }
+
+  $("#usb-hint").addEventListener("click", function (e) {
+    var b = e.target.closest(".use-dev"); if (!b) return;
+    var list = (get("adb.allowed") || []).slice(), serial = b.getAttribute("data-serial");
+    if (list.indexOf(serial) < 0) list.push(serial);
+    save("adb.allowed", list, true);
+    b.disabled = true; b.textContent = "Setting up…";
+    toast("The display will use this device. Click Install App on Tablet if it isn’t installed yet.");
+  });
 
   // ---------- Sidebar highlight ----------
   var content = $(".content");

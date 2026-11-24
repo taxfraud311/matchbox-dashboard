@@ -54,7 +54,7 @@ final class ConfigStore {
       "headlinesPerCard": 3,
       "speedTest": { "enabled": true, "intervalMinutes": 60 },
       "brightness": { "day": -1, "night": 0.2 },
-      "adb": { "autoReverse": true, "autoLaunch": true, "anyDevice": false, "path": "" }
+      "adb": { "autoReverse": true, "autoLaunch": true, "anyDevice": false, "allowed": [], "path": "" }
     }
     """
 

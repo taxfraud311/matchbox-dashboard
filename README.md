@@ -2,7 +2,7 @@
 
 # Matchbox Dashboard
 
-Turns a 12th‑gen Amazon Fire 7 into a live info screen that sits under your Mac mini. A small menu bar app on the Mac does all the work; the tablet just shows the page.
+Turns an Android tablet into a live info screen that sits under or beside your Mac. A small menu bar app on the Mac does all the work; the tablet just shows the page.
 
 - **Left side:** live Mac metrics: CPU, GPU, memory, disk (capacity + I/O), network throughput and periodic speed tests. They take the left half, or the left quarter with *Compact metrics* on.
 - **Right side:** a big clock with a weather glance, plus a card carousel: weather, live scores with TV networks, headlines, YouTube uploads, anime countdowns, Bluesky posts, Steam wishlist releases, deals, achievements and news, exchange rates, a kanji of the hour, rain radar and Slickdeals.
@@ -14,7 +14,7 @@ Everything is set up in a local web page on the Mac (the manager). No accounts a
 ## Requirements
 
 - A Mac running macOS 14 or later. Developed on an Apple silicon Mac mini.
-- An Amazon Fire tablet. The layout is designed for the 12th‑gen Fire 7 (1024×600) and scales on other screens.
+- An Android tablet running Android 8 or later, including Amazon Fire tablets (Fire OS 7+). The layout is designed for a 1024×600 landscape screen (it was built on a 12th‑gen Fire 7) and scales to fit others.
 - To build from source: Xcode command-line tools, the Android SDK (platform 34) and JDK 17. With Homebrew: `brew install openjdk@17 android-platform-tools` plus the Android SDK from Android Studio or `brew install --cask android-commandlinetools`.
 
 ## Download
@@ -28,7 +28,7 @@ Get the **Matchbox-Dashboard-…-macOS.zip** file from the [latest release](http
 | `mac/` | **Matchbox Dashboard.app**, a Swift menu bar app. It samples metrics, proxies weather (Open‑Meteo), scores (ESPN) and RSS, and serves the display and manager on port 8787. It also runs `adb reverse` automatically so the tablet works over the USB cable. |
 | `web/display/` | The tablet dashboard, designed pixel-for-pixel for 1024×600. |
 | `web/manager/` | The manager at **http://localhost:8787/manager/**: live preview and every setting. It's only reachable from the Mac itself. |
-| `android/` | **MatchboxDashboard.apk**, a 20 KB fullscreen kiosk WebView for Fire OS. It tries USB first, then a saved or Bonjour-discovered Wi‑Fi address. It keeps the screen on, lets the Mac set brightness, and relaunches after reboot. |
+| `android/` | **MatchboxDashboard.apk**, a 20 KB fullscreen kiosk WebView for Android and Fire OS. It tries USB first, then a saved or Bonjour-discovered Wi‑Fi address. It keeps the screen on, lets the Mac set brightness, and relaunches after reboot. |
 
 ## Build
 
@@ -43,19 +43,20 @@ The build looks for JDK 17 at `/opt/homebrew/opt/openjdk@17` (or `$JAVA_HOME_17`
 
 ## Tablet setup (once)
 
-1. Fire tablet: **Settings › Device Options › About Fire Tablet** → tap **Serial Number** 7×.
-2. **Device Options › Developer Options** → turn on **USB debugging**.
+1. Turn on Developer options on the tablet: **Settings › About tablet** → tap **Build number** 7×. The menu names vary by brand; on Amazon Fire it's **Settings › Device Options › About Fire Tablet** → tap **Serial Number** 7×.
+2. In **Developer options**, turn on **USB debugging**.
 3. `brew install android-platform-tools` on the Mac (if adb isn't installed).
-4. Plug the tablet into the Mac mini and tap **Allow** (tick *Always allow*).
-5. Matchbox Dashboard menu bar icon → **Install App on Tablet** (or the button in the manager).
+4. Plug the tablet into the Mac and tap **Allow** (tick *Always allow*).
+5. Amazon Fire tablets are picked up automatically. For any other tablet, open the manager and click **Use** next to it in the Tablet section.
+6. Matchbox Dashboard menu bar icon → **Install App on Tablet** (or the button in the manager).
 
 After that, the display opens by itself whenever the tablet is plugged in or reboots. If the display process dies (for example during a WebView update), the Mac relaunches it.
 
-**Wi‑Fi instead of USB:** in the Silk browser on the tablet, open `http://<mac-ip>:8787/download/MatchboxDashboard.apk` (the manager shows the address) and install it. Then long-press the top-left corner of the display to enter the address. The app also finds the Mac automatically via Bonjour.
+**Wi‑Fi instead of USB:** in the tablet's web browser, open `http://<mac-ip>:8787/download/MatchboxDashboard.apk` (the manager shows the address) and install it. Then long-press the top-left corner of the display to enter the address. The app also finds the Mac automatically via Bonjour.
 
 ## Notes
 
-- Only Amazon Fire tablets (model `KF…`) are touched over adb. Other Android devices on the Mac are ignored unless you turn on *Use any Android device* in the manager.
+- Over adb, the Mac only touches Amazon Fire tablets (model `KF…`) and devices you've chosen with **Use** in the manager. Phones, TV boxes and other Android devices connected to the Mac are left alone unless you turn on *Use any Android device*.
 - "Use the Mac's San Francisco font" streams `/System/Library/Fonts/SFNS*.ttf` from your Mac to your tablet. Apple's font license is written for Apple platforms, so switch it off if that matters to you. The tablet then falls back to its own font.
 - **Compact metrics** (manager › Display) stacks the Mac metrics in one narrow column on the left quarter of the screen, so the clock and cards get three quarters.
 - **Day mode colors** (manager › Display) has three options:

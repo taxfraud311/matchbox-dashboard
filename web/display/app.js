@@ -1,4 +1,4 @@
-/* Matchbox Dashboard display — runs inside the Fire tablet WebView (or any browser). */
+/* Matchbox Dashboard display — runs inside the tablet app's WebView (or any browser). */
 (function () {
   "use strict";
 

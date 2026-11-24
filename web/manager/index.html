@@ -339,7 +339,7 @@
       <div class="group">
         <div class="row"><div class="lbl">Set up USB automatically<div class="hint">Runs <code>adb reverse</code> so the tablet reaches this Mac over the cable</div></div><label class="switch"><input type="checkbox" data-key="adb.autoReverse"><i></i></label></div>
         <div class="row"><div class="lbl">Open the display when the tablet is plugged in</div><label class="switch"><input type="checkbox" data-key="adb.autoLaunch"><i></i></label></div>
-        <div class="row"><div class="lbl">Use any Android device<div class="hint">Off = only Amazon Fire tablets are set up, so other Android devices on this Mac are left alone</div></div><label class="switch"><input type="checkbox" data-key="adb.anyDevice"><i></i></label></div>
+        <div class="row"><div class="lbl">Use any Android device<div class="hint">Off = only Amazon Fire tablets and devices you’ve chosen are set up, so phones and TV boxes connected to this Mac are left alone</div></div><label class="switch"><input type="checkbox" data-key="adb.anyDevice"><i></i></label></div>
         <div class="row"><div class="lbl">Allow tablets on Wi-Fi<div class="hint">Off = USB only. The manager is always restricted to this Mac.</div></div><label class="switch"><input type="checkbox" data-key="allowNetwork"><i></i></label></div>
         <div class="row"><div class="lbl">Port</div><input type="number" class="field small" data-key="port" data-num data-lazy min="1024" max="65535"></div>
         <div class="row"><div class="lbl">adb location<div class="hint" id="adb-found"></div></div><input type="text" class="field" data-key="adb.path" data-lazy placeholder="Auto-detect"></div>
@@ -347,13 +347,14 @@
       <details class="help glass">
         <summary>First-time tablet setup</summary>
         <ol>
-          <li>On the Fire tablet open <b>Settings › Device Options › About Fire Tablet</b> and tap <b>Serial Number</b> 7 times.</li>
-          <li>Go back to <b>Device Options › Developer Options</b> and turn on <b>USB debugging</b>.</li>
+          <li>Turn on <b>Developer options</b> on the tablet: open <b>Settings › About tablet</b> and tap <b>Build number</b> 7 times. (Amazon Fire: <b>Settings › Device Options › About Fire Tablet</b>, tap <b>Serial Number</b> 7 times.)</li>
+          <li>In <b>Developer options</b>, turn on <b>USB debugging</b>.</li>
           <li>Install adb on this Mac if needed: <code>brew install android-platform-tools</code>.</li>
           <li>Connect the tablet with a USB cable and tap <b>Allow</b> on the “Allow USB debugging?” prompt (check “Always allow”).</li>
+          <li>Amazon Fire tablets are set up automatically. For any other tablet, click <b>Use</b> next to it under Connection in the Tablet section.</li>
           <li>Click <b>Install App on Tablet</b> above. The display opens automatically and starts whenever the tablet boots or is plugged in.</li>
         </ol>
-        <p>No cable? Download the APK on the tablet’s Silk browser from the Wi-Fi address shown above, install it, then long-press the top-left corner of the display to enter that address.</p>
+        <p>No cable? Download the APK in the tablet’s web browser from the Wi-Fi address shown above, install it, then long-press the top-left corner of the display to enter that address.</p>
       </details>
       <div class="row-btns"><button class="btn danger" id="reset">Reset All Settings</button></div>
       <p class="foot" id="config-path"></p>

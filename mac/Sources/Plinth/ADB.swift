@@ -1,6 +1,6 @@
 import Foundation
 
-/// Watches for USB-connected Android/Fire devices and sets up `adb reverse` so the tablet
+/// Watches for USB-connected Android devices and sets up `adb reverse` so the tablet
 /// can reach this Mac at http://127.0.0.1:<port> over the cable — no Wi-Fi involved.
 final class ADBBridge {
     static let shared = ADBBridge()
@@ -60,9 +60,13 @@ final class ADBBridge {
     /// Amazon Fire tablets report model codes starting with "KF" (12th-gen Fire 7 = KFQUWI).
     static func isFire(_ d: Device) -> Bool { d.model.uppercased().hasPrefix("KF") }
 
-    /// Only Fire tablets are touched unless "adb.anyDevice" is on — other Android gear on this Mac
+    /// Which devices get set up: Fire tablets automatically, any other Android device once it's picked in the
+    /// manager ("adb.allowed"), or everything with "adb.anyDevice". Other Android gear on this Mac
     /// (TV boxes, phones) is left alone.
-    static func eligible(_ d: Device) -> Bool { isFire(d) || ConfigStore.shared.bool("adb.anyDevice", false) }
+    static func eligible(_ d: Device) -> Bool {
+        if isFire(d) || ConfigStore.shared.bool("adb.anyDevice", false) { return true }
+        return (ConfigStore.shared.value("adb.allowed") as? [Any] ?? []).contains { ($0 as? String) == d.serial }
+    }
 
     private func targets() -> [Device] {
         lock.lock(); defer { lock.unlock() }
@@ -123,7 +127,7 @@ final class ADBBridge {
             if !model.isEmpty { d.model = model }
             if state == "device" && !ADBBridge.eligible(d) {
                 d.reversed = false
-                d.lastMessage = "Ignored (not a Fire tablet)"
+                d.lastMessage = "Not set up: choose Use This Device in the manager"
             } else if state == "device" {
                 let list = adb(["-s", serial, "reverse", "--list"]).stdout
                 let want = "tcp:\(port) tcp:\(port)"
