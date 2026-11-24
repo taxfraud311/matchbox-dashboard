@@ -1,0 +1,25 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.plinth.display'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.plinth.display'
+        minSdk 26          // Fire OS 7+ ; the 12th-gen Fire 7 runs Fire OS 8 (Android 11)
+        targetSdk 34
+        versionCode 4
+        versionName '1.3'
+    }
+
+    buildTypes {
+        debug { debuggable true }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#000000">
+<title>Matchbox Dashboard</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="day">
+<div id="backdrop"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div></div>
+<main id="stage">
+  <!-- LEFT: Mac system metrics -->
+  <section id="metrics">
+    <div class="glass tile tappable" id="t-cpu" style="--accent: var(--cpu)">
+      <div class="tile-head"><span class="ico" data-icon="cpu"></span><span class="label">CPU</span><span class="aside" id="cpu-aside"></span></div>
+      <div class="value"><span id="cpu-val">–</span><span class="unit">%</span></div>
+      <div class="sub" id="cpu-sub">&nbsp;</div>
+      <canvas class="spark" id="cpu-spark"></canvas>
+    </div>
+    <div class="glass tile tappable" id="t-gpu" style="--accent: var(--gpu)">
+      <div class="tile-head"><span class="ico" data-icon="gpu"></span><span class="label">GPU</span><span class="aside" id="gpu-aside"></span></div>
+      <div class="value"><span id="gpu-val">–</span><span class="unit">%</span></div>
+      <div class="sub" id="gpu-sub">&nbsp;</div>
+      <canvas class="spark" id="gpu-spark"></canvas>
+    </div>
+    <div class="glass tile tappable" id="t-mem" style="--accent: var(--mem)">
+      <div class="tile-head"><span class="ico" data-icon="mem"></span><span class="label">Memory</span><span class="aside" id="mem-aside"></span></div>
+      <div class="value"><span id="mem-val">–</span><span class="unit">%</span></div>
+      <div class="sub" id="mem-sub">&nbsp;</div>
+      <canvas class="spark" id="mem-spark"></canvas>
+    </div>
+    <div class="glass tile tappable" id="t-disk" style="--accent: var(--disk)">
+      <div class="tile-head"><span class="ico" data-icon="disk"></span><span class="label">Disk</span><span class="aside" id="disk-aside"></span></div>
+      <div class="value"><span id="disk-val">–</span><span class="unit">%</span></div>
+      <div class="sub" id="disk-sub">&nbsp;</div>
+      <div class="bar"><div class="fill" id="disk-bar"></div></div>
+      <div class="io" id="disk-io">&nbsp;</div>
+    </div>
+    <div class="glass tile wide tappable" id="t-net" style="--accent: var(--down)">
+      <div class="tile-head"><span class="ico" data-icon="net"></span><span class="label">Network</span><span class="aside" id="net-aside"></span></div>
+      <div class="net-row">
+        <div class="net-val down"><span class="arrow">↓</span><span id="net-down">–</span><span class="unit" id="net-down-u"></span></div>
+        <div class="net-val up"><span class="arrow">↑</span><span id="net-up">–</span><span class="unit" id="net-up-u"></span></div>
+      </div>
+      <div class="sub" id="net-sub">&nbsp;</div>
+      <canvas class="spark" id="net-spark"></canvas>
+    </div>
+  </section>
+
+  <!-- RIGHT: clock + cycling info cards -->
+  <section id="info">
+    <div class="glass" id="clock">
+      <div class="clock-main tappable" id="clock-main">
+        <div class="time"><span id="time">–:––</span><span class="ampm" id="ampm"></span></div>
+        <div class="date" id="date">&nbsp;</div>
+        <div class="away" id="away"></div>
+      </div>
+      <div class="glance tappable" id="glance"></div>
+      <div class="conn" id="conn">Reconnecting to Mac…</div>
+    </div>
+    <div class="glass" id="card">
+      <div class="card-head">
+        <span class="chip" id="card-chip"></span>
+        <span class="card-title" id="card-title"></span>
+        <span class="card-sub" id="card-sub"></span>
+        <span class="dots" id="dots"></span>
+      </div>
+      <div class="card-body">
+        <div class="slide" id="slide-a"></div>
+        <div class="slide" id="slide-b"></div>
+      </div>
+      <div class="progress"><div id="progress"></div></div>
+      <div class="card-ctl" id="card-ctl">
+        <div class="ctl-row">
+          <button id="ctl-prev" aria-label="Previous"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <button id="ctl-pause" class="big-btn" aria-label="Pause"></button>
+          <button id="ctl-next" aria-label="Next"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        </div>
+        <div class="ctl-state" id="ctl-state"></div>
+        <div class="ctl-lbl">Time per card</div>
+        <div class="ctl-int" id="ctl-int"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Expanded detail sheet (metric details, world clock, forecast) -->
+  <div class="sheet-wrap" id="sheet">
+    <div class="sheet-backdrop" id="sheet-backdrop"></div>
+    <div class="sheet glass">
+      <div class="sheet-head"><span class="chip" id="sheet-chip"></span><h2 id="sheet-title"></h2><span class="sub" id="sheet-sub"></span>
+        <button class="sheet-close" id="sheet-close" aria-label="Close">×</button></div>
+      <div class="sheet-body" id="sheet-body"></div>
+    </div>
+  </div>
+</main>
+<script src="palette.js"></script>
+<script src="app.js"></script>
+<script src="sheets.js"></script>
+</body>
+</html>
