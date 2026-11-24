@@ -107,17 +107,29 @@ final class MediaFeeds {
         let (data, err) = get(url)
         guard let data else { return ["error": err ?? "Couldn’t load that page"] }
         let html = String(decoding: data, as: UTF8.self)
+        func first(_ p: String) -> String? {
+            guard let re = try? NSRegularExpression(pattern: p),
+                  let m = re.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
+                  let r = Range(m.range(at: 1), in: html) else { return nil }
+            return String(html[r])
+        }
+        // Only markers that describe the page's own channel. A loose "channelId" also matches featured and
+        // linked channels (the @DSPTriesItMemology101 page links Memology 101 before its own id appears).
         let patterns = [#"<link rel="canonical" href="https://www\.youtube\.com/channel/(UC[A-Za-z0-9_-]{22})""#,
-                        #""externalId":"(UC[A-Za-z0-9_-]{22})""#, #""channelId":"(UC[A-Za-z0-9_-]{22})""#]
-        for p in patterns {
-            if let re = try? NSRegularExpression(pattern: p),
-               let m = re.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
-               let r = Range(m.range(at: 1), in: html) {
-                let id = String(html[r])
-                return ["id": id, "title": channelTitle(id) ?? q]
+                        #"<meta property="og:url" content="https://www\.youtube\.com/channel/(UC[A-Za-z0-9_-]{22})""#,
+                        #""channelMetadataRenderer":\{[^{}]*?"externalId":"(UC[A-Za-z0-9_-]{22})""#,
+                        #""externalId":"(UC[A-Za-z0-9_-]{22})""#]
+        guard let id = patterns.lazy.compactMap(first).first else { return ["error": "Couldn’t find a channel at that address"] }
+        var out: [String: Any] = ["id": id, "title": channelTitle(id) ?? q]
+        if let h = first(#""vanityChannelUrl":"https?://www\.youtube\.com/(@[^"/?]+)""#) {
+            out["handle"] = h.removingPercentEncoding ?? h
+            // Asked for a handle but landed on a different channel's page (a redirect): don't guess.
+            if let asked = q.range(of: #"/(@[^/?#]+)"#, options: .regularExpression).map({ String(q[$0].dropFirst()) }),
+               (asked.removingPercentEncoding ?? asked).lowercased() != (out["handle"] as! String).lowercased() {
+                return ["error": "YouTube sent a different channel (\(out["handle"]!)) for \(asked)"]
             }
         }
-        return ["error": "Couldn’t find a channel at that address"]
+        return out
     }
 
     private func channelTitle(_ id: String) -> String? {
