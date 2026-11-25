@@ -13,7 +13,8 @@
   <aside class="sidebar glass">
     <div class="brand">
       <img class="logo" src="icon.png" alt="">
-      <div><div class="brand-name">Matchbox Dashboard</div><div class="brand-sub" id="brand-sub">Info display manager</div></div>
+      <div><div class="brand-name">Matchbox Dashboard</div><div class="brand-sub" id="brand-sub">Info display manager</div>
+        <a class="ver-pill" id="ver-pill" href="#updates" title="Updates">Version –</a></div>
     </div>
     <nav>
       <a href="#tablet" class="on"><span class="nico" style="background:#0a84ff">􀟜</span>Tablet</a>
@@ -31,12 +32,20 @@
       <a href="#radar"><span class="nico" style="background:#0a7b91"></span>Radar</a>
       <a href="#slickdeals"><span class="nico" style="background:#1360c9"></span>Slickdeals</a>
       <a href="#network"><span class="nico" style="background:#30d158">􀤆</span>Network</a>
+      <a href="#updates"><span class="nico" style="background:#007aff"></span>Updates<span class="nav-badge" id="nav-upd" hidden>1</span></a>
       <a href="#connection"><span class="nico" style="background:#8e8e93">􀉣</span>Connection</a>
     </nav>
     <div class="side-foot" id="saved">All changes saved</div>
   </aside>
 
   <main class="content">
+    <div class="upd-banner glass" id="upd-banner" hidden>
+      <span class="upd-ico">↑</span>
+      <div class="upd-txt"><b id="upd-title"></b><span id="upd-sub">You have version –</span></div>
+      <a class="btn ghost" id="upd-notes" href="#updates">What’s New</a>
+      <button class="btn primary" data-upd="install">Install and Relaunch</button>
+      <button class="upd-x" id="upd-dismiss" aria-label="Dismiss" title="Hide until the next version">×</button>
+    </div>
     <!-- Tablet / status -->
     <section id="tablet">
       <h1>Tablet</h1>
@@ -355,6 +364,23 @@
     </section>
 
     <!-- Connection -->
+    <section id="updates">
+      <h1>Updates</h1>
+      <div class="group">
+        <div class="row"><div class="lbl">Installed version<div class="hint" id="upd-where"></div></div><div class="val ver-big" id="upd-current">–</div></div>
+        <div class="row"><div class="lbl">Latest release<div class="hint" id="upd-checked">Not checked yet</div></div><div class="val" id="upd-latest">–</div></div>
+        <div class="row"><div class="lbl">Check for updates automatically<div class="hint">Looks at the project’s GitHub releases when the app opens and every 6 hours. Nothing is installed until you choose to.</div></div><label class="switch"><input type="checkbox" data-key="updates.check"><i></i></label></div>
+        <div class="row actions">
+          <button class="btn" data-upd="check">Check Now</button>
+          <button class="btn primary" data-upd="install" hidden>Install and Relaunch</button>
+          <span class="upd-progress" id="upd-progress" hidden><i></i></span>
+          <span class="hint" id="upd-msg"></span>
+        </div>
+      </div>
+      <details class="help glass" id="upd-notes-box" hidden><summary id="upd-notes-sum">What’s new</summary><div class="notes" id="upd-notes-body"></div></details>
+      <p class="foot">Updates come from <a href="https://github.com/taxfraud311/matchbox-dashboard/releases" target="_blank">github.com/taxfraud311/matchbox-dashboard</a>. The download is checked against GitHub’s SHA-256 checksum before it replaces the app. A tablet connected over USB gets the new tablet app automatically after the Mac updates.</p>
+    </section>
+
     <section id="connection">
       <h1>Connection</h1>
       <div class="group">

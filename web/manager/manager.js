@@ -19,6 +19,7 @@
     worldclock: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
     youtube: '<svg viewBox="0 0 24 24"><path d="M9 7.5v9l7.5-4.5z" fill="#fff"/></svg>',
     anime: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 2.5h6"/></svg>',
+    updates: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
     connection: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><path d="M12 3v12M8 7l4-4 4 4M7 13v3a5 5 0 0 0 10 0v-3"/></svg>',
   };
   $$("nav a").forEach(function (a) { $(".nico", a).innerHTML = NAV_ICONS[a.getAttribute("href").slice(1)] || ""; });
@@ -811,6 +812,80 @@
     toast("The display will use this device. Click Install App on Tablet if it isn’t installed yet.");
   });
 
+  // ---------- Updates ----------
+  var bootVersion = null, updBusy = false;
+  function mdLite(s) {
+    // Release notes are Markdown: enough of it for headings, bullets, bold and code.
+    var out = [], inList = false;
+    String(s || "").split(/\r?\n/).forEach(function (line) {
+      var t = esc(line).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>");
+      var li = /^\s*[-*] (.*)/.exec(t);
+      if (li) { if (!inList) { out.push("<ul>"); inList = true; } out.push("<li>" + li[1] + "</li>"); return; }
+      if (inList) { out.push("</ul>"); inList = false; }
+      var h = /^#{1,4} (.*)/.exec(t);
+      if (h) out.push("<h4>" + h[1] + "</h4>"); else if (t.trim()) out.push("<p>" + t + "</p>");
+    });
+    if (inList) out.push("</ul>");
+    return out.join("");
+  }
+  function renderUpdate(u) {
+    if (bootVersion === null) bootVersion = u.current;
+    else if (u.current !== bootVersion) { location.reload(); return; }   // relaunched into the new version
+    var rel = u.latest, avail = !!u.available;
+    $("#ver-pill").textContent = "Version " + u.current + (avail ? " · update" : "");
+    $("#ver-pill").classList.toggle("new", avail);
+    $("#nav-upd").hidden = !avail;
+    $("#upd-current").textContent = u.current;
+    $("#upd-where").textContent = u.cantInstall || "";
+    $("#upd-latest").textContent = u.checking ? "Checking…" : rel ? rel.version + (avail ? " — available" : " — up to date") : "–";
+    $("#upd-checked").textContent = u.error ? "⚠︎ " + u.error : u.checkedAt ? "Checked " + ago(u.checkedAt) : "Not checked yet";
+    var busy = ["downloading", "verifying", "installing"].indexOf(u.phase) >= 0;
+    updBusy = busy;
+    $$("[data-upd=install]").forEach(function (b) {
+      b.hidden = !avail; b.disabled = busy || !!u.cantInstall;
+      b.textContent = u.phase === "downloading" ? "Downloading… " + Math.round((u.progress || 0) * 100) + "%"
+                    : u.phase === "verifying" ? "Checking download…" : u.phase === "installing" ? "Relaunching…" : "Install and Relaunch";
+    });
+    $("[data-upd=check]").disabled = u.checking || busy;
+    var pr = $("#upd-progress"); pr.hidden = u.phase !== "downloading"; $("i", pr).style.width = Math.round((u.progress || 0) * 100) + "%";
+    $("#upd-msg").textContent = u.phase === "failed" ? "⚠︎ " + (u.installError || "The update failed") : u.phase === "installing" ? "Matchbox Dashboard is relaunching. This page reloads when it’s back." : "";
+    var box = $("#upd-notes-box");
+    if (rel && rel.notes) {
+      box.hidden = false;
+      $("#upd-notes-sum").textContent = "What’s new in " + rel.version;
+      if (box._v !== rel.version) { box._v = rel.version; $("#upd-notes-body").innerHTML = mdLite(rel.notes); }
+    } else box.hidden = true;
+    // The banner: shown for each new version until dismissed, and always while an install is under way.
+    var dismissed = null; try { dismissed = localStorage.getItem("plinth.mgr.updDismissed"); } catch (e) {}
+    var ban = $("#upd-banner");
+    ban.hidden = !(avail && (busy || u.phase === "failed" || dismissed !== rel.version));
+    if (avail) {
+      $("#upd-title").textContent = "Matchbox Dashboard " + rel.version + " is available";
+      $("#upd-sub").textContent = u.phase === "failed" ? "⚠︎ " + (u.installError || "The update failed")
+                                : u.cantInstall ? u.cantInstall : "You have version " + u.current + ". Installing takes a few seconds and reopens the app.";
+      ban._v = rel.version;
+    }
+  }
+  function pollUpdate() {
+    fetch("/api/update").then(function (r) { return r.json(); }).then(renderUpdate)
+      .catch(function () { if (updBusy) $("#upd-msg").textContent = "Matchbox Dashboard is relaunching…"; })
+      .then(function () { setTimeout(pollUpdate, updBusy ? 700 : 3000); });
+  }
+  function updAction(a) {
+    return fetch("/api/update", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: a }) })
+      .then(function (r) { return r.json(); })
+      .then(function (j) { if (j.error) toast(j.error); else renderUpdate(j); });
+  }
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-upd]"); if (!b) return;
+    updAction(b.getAttribute("data-upd"));
+  });
+  $("#upd-dismiss").addEventListener("click", function () {
+    try { localStorage.setItem("plinth.mgr.updDismissed", $("#upd-banner")._v); } catch (e) {}
+    $("#upd-banner").hidden = true;
+  });
+  $("#upd-notes").addEventListener("click", function () { $("#upd-notes-box").open = true; });
+
   // ---------- Sidebar highlight ----------
   var content = $(".content");
   content.addEventListener("scroll", function () {
@@ -824,4 +899,5 @@
   fitPreview();
   setTimeout(fitPreview, 300);
   pollStatus();
+  pollUpdate();
 })();

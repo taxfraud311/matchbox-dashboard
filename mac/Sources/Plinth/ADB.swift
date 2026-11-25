@@ -245,6 +245,21 @@ final class ADBBridge {
         }
     }
 
+    /// After the Mac app updates itself: reinstall the bundled tablet app on USB tablets running an older one.
+    func updateOutdatedTablets() {
+        guard let want = Updater.bundledTabletVersion else { return }
+        queue.async { [weak self] in
+            guard let self, self.adbPath != nil else { return }
+            let old = self.targets().filter { d in
+                let out = self.adb(["-s", d.serial, "shell", "dumpsys", "package", ADBBridge.package]).stdout
+                guard let line = out.split(separator: "\n").first(where: { $0.contains("versionName=") }) else { return false }
+                let have = String(line.split(separator: "=").last ?? "").trimmingCharacters(in: .whitespaces)
+                return Updater.isNewer(want, than: have)
+            }
+            if !old.isEmpty { self.installApp { msg in NSLog("Tablet app update: \(msg)") } }
+        }
+    }
+
     func launchApp() {
         queue.async { [weak self] in
             guard let self else { return }

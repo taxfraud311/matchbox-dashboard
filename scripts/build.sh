@@ -29,6 +29,7 @@ else
 fi
 [[ -x "$BIN" ]] || { echo "Swift build failed"; exit 1; }
 
+TABLET_VERSION=$(sed -n "s/.*versionName '\\(.*\\)'.*/\\1/p" "$ROOT/android/app/build.gradle")
 NAME="Matchbox Dashboard"
 APP="$OUT/$NAME.app"
 rm -rf "$APP" "$OUT/Plinth.app"
@@ -51,8 +52,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleExecutable</key><string>$NAME</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.2.0</string>
+  <key>CFBundleShortVersionString</key><string>1.3.0</string>
   <key>CFBundleVersion</key><string>1</string>
+  <key>PlinthTabletVersion</key><string>$TABLET_VERSION</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
@@ -73,7 +75,9 @@ if [[ "${1:-}" == "--install" ]]; then
     pkill -x Plinth 2>/dev/null || true; sleep 1
     mv /Applications/Plinth.app "$HOME/.Trash/Plinth $(date +%H%M%S).app"
   fi
-  rm -rf "/Applications/$NAME.app" && cp -R "$APP" /Applications/
+  # ditto without resource forks: cp -R off the exFAT drive adds ._ files that break the code signature.
+  rm -rf "/Applications/$NAME.app" && ditto --norsrc --noextattr "$APP" "/Applications/$NAME.app"
+  find "/Applications/$NAME.app" -name '._*' -delete
   open "/Applications/$NAME.app" --args --open-manager
   echo "✓ Installed to /Applications and launched"
 fi

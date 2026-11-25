@@ -37,6 +37,7 @@ final class ConfigStore {
       "slickdeals": { "frontpage": true, "popular": false, "searches": [] },
       "bluesky": { "accounts": [], "includeReposts": false },
       "steam": { "profile": "", "minDiscount": 10, "apiKey": "" },
+      "updates": { "check": true },
       "youtube": { "channels": [], "maxAgeDays": 7, "hideShorts": true },
       "anime": { "shows": [], "anilistUser": "", "delayMinutes": 0 },
       "sports": {

@@ -1,7 +1,7 @@
 import AppKit
 import ServiceManagement
 
-let appVersion = "1.0"
+var appVersion: String { Updater.current }
 
 enum AppPaths {
     /// Bundled web assets, or the repo's web/ folder when running from `swift run`.
@@ -56,6 +56,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var tabletItem = NSMenuItem()
     var themeItem = NSMenuItem()
     var loginItem = NSMenuItem()
+    var versionItem = NSMenuItem()
+    var updateItem = NSMenuItem()
     var currentPort: Int = 0
     var currentLocalOnly = false
 
@@ -71,6 +73,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ADBBridge.shared.onChange = { [weak self] in DispatchQueue.main.async { self?.refreshMenu() } }
         ADBBridge.shared.start()
         ClaudeUsage.shared.start()
+        Updater.shared.onChange = { [weak self] in self?.refreshMenu() }
+        Updater.shared.start()
         Presence.shared.onScreenSaverChange = { saver in
             // Screen-saver mode: the tablet asks to be switched off itself; waking it is up to the Mac, since a
             // tablet with its screen off has stopped listening.
@@ -125,6 +129,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
         loginItem = item("Open at Login", #selector(toggleLogin), "")
         menu.addItem(loginItem)
+        updateItem = item("Check for Updates…", #selector(updateMenu), "")
+        menu.addItem(updateItem)
+        versionItem.isEnabled = false
+        menu.addItem(versionItem)
         menu.addItem(item("Quit Matchbox Dashboard", #selector(quit), "q"))
         statusItem.menu = menu
         refreshMenu()
@@ -148,6 +156,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         tabletItem.title = ADBBridge.shared.connectedSummary
         themeItem.title = "Display mode: " + (effectiveTheme == "night" ? "Night" : "Day")
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        versionItem.title = "Version \(appVersion)"
+        let u = Updater.shared.status
+        if Updater.shared.busy {
+            updateItem.title = u["phase"] as? String == "downloading" ? "Downloading Update… \(Int(((u["progress"] as? Double) ?? 0) * 100))%" : "Installing Update…"
+        } else if let rel = Updater.shared.available {
+            updateItem.title = "Install Update \(rel.version)…"
+        } else { updateItem.title = (u["checking"] as? Bool) == true ? "Checking for Updates…" : "Check for Updates…" }
     }
 
     var effectiveTheme: String {
@@ -165,10 +180,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func launchTablet() { ADBBridge.shared.launchApp() }
     @objc func quit() { NSApp.terminate(nil) }
 
+    @objc func updateMenu() {
+        if Updater.shared.busy { return }
+        if Updater.shared.available != nil { confirmUpdate(); return }
+        Updater.shared.check { ok in
+            DispatchQueue.main.async {
+                if Updater.shared.available != nil { self.confirmUpdate(); return }
+                let a = NSAlert()
+                a.messageText = ok ? "You’re up to date" : "Couldn’t check for updates"
+                a.informativeText = ok ? "Matchbox Dashboard \(appVersion) is the latest version."
+                                       : (Updater.shared.status["error"] as? String ?? "Try again later.")
+                NSApp.activate(ignoringOtherApps: true); a.runModal()
+            }
+        }
+    }
+
+    func confirmUpdate() {
+        guard let rel = Updater.shared.available else { return }
+        let a = NSAlert()
+        a.messageText = "Matchbox Dashboard \(rel.version) is available"
+        var notes = rel.notes.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "## ", with: "")
+        if notes.count > 700 { notes = String(notes.prefix(700)) + "…" }
+        a.informativeText = "You have \(appVersion). The app will download the update, check it and relaunch.\n\n" + notes
+        a.addButton(withTitle: "Install and Relaunch"); a.addButton(withTitle: "Later"); a.addButton(withTitle: "Release Notes")
+        NSApp.activate(ignoringOtherApps: true)
+        switch a.runModal() {
+        case .alertFirstButtonReturn:
+            if let err = Updater.shared.install() {
+                let e = NSAlert(); e.messageText = "Couldn’t install the update"; e.informativeText = err; e.runModal()
+            }
+        case .alertThirdButtonReturn: if let u = URL(string: rel.page) { NSWorkspace.shared.open(u) }
+        default: break
+        }
+    }
+
     /// Give the tablet a moment to hear that Plinth is going away (logout, shutdown or Quit).
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if [.awake, .locked].contains(Presence.shared.state) { Presence.shared.set(.quitting) }
-        DispatchQueue.main.asyncAfter(deadline: .now() + Presence.announceDelay) { NSApp.reply(toApplicationShouldTerminate: true) }
+        // A run-loop timer rather than GCD: terminate() can be called from inside a main-queue block, which would
+        // keep a queued reply from ever running.
+        let t = Timer(timeInterval: Presence.announceDelay, repeats: false) { _ in NSApp.reply(toApplicationShouldTerminate: true) }
+        RunLoop.main.add(t, forMode: .common)
         return .terminateLater
     }
 
@@ -282,6 +334,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             ]
             if r.query["h"] != nil { body["h"] = s.history }
             if let c = ClaudeUsage.shared.summary { body["claude"] = c }
+            // Lets the tablet show its "update available" note.
+            var ver: [String: Any] = ["mac": appVersion]
+            if let rel = Updater.shared.available { ver["update"] = rel.version }
+            if let t = Updater.bundledTabletVersion { ver["tablet"] = t }
+            body["version"] = ver
             return .json(body)
 
         case ("GET", "/api/feeds"):
@@ -319,6 +376,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 guard let n = (j["seconds"] as? NSNumber)?.intValue, (4...600).contains(n) else { return .json(["error": "bad value"], status: 400) }
                 ConfigStore.shared.update(with: ["cycleSeconds": n]); return .json(["ok": true])
             default: return .json(["error": "not allowed"], status: 403)
+            }
+
+        case ("GET", "/api/update"):
+            return managerOnly { .json(Updater.shared.status) }
+
+        case ("POST", "/api/update"):
+            return managerOnly {
+                let j = (try? JSONSerialization.jsonObject(with: r.body)) as? [String: Any] ?? [:]
+                switch j["action"] as? String ?? "" {
+                case "check": Updater.shared.check()
+                case "install": if let err = Updater.shared.install() { return .json(["error": err], status: 409) }
+                default: return .json(["error": "unknown action"], status: 400)
+                }
+                return .json(Updater.shared.status)
             }
 
         case ("GET", "/api/diskscan"):

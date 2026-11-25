@@ -319,6 +319,7 @@
       if (j.rev !== cfgRev) loadConfig(j.rev);
       if (j.fv !== feedsVer) loadFeeds(j.fv);
       if (j.screen) screenFromMac(j.screen);
+      renderUpdate(j.version);
       renderClaude(j.claude);
       if (j.m) {
         saveCache(false);
@@ -1228,6 +1229,35 @@
   document.addEventListener("visibilitychange", function () { if (!document.hidden) wake(); });
   window.plinthResumed = wake;
   $("screen-off").addEventListener("pointerdown", function (e) { e.stopPropagation(); e.preventDefault(); wake(); });
+
+  // ---------- Update available ----------
+  // A newer Mac app on GitHub, or (after the Mac updated) a newer tablet app than this one. Dismissed per version.
+  function newer(a, b) {
+    var x = String(a || "").split("."), y = String(b || "").split(".");
+    for (var i = 0; i < Math.max(x.length, y.length); i++) {
+      var p = parseInt(x[i] || 0, 10) || 0, q = parseInt(y[i] || 0, 10) || 0;
+      if (p !== q) return p > q;
+    }
+    return false;
+  }
+  var noteKey = null;
+  function renderUpdate(v) {
+    var mine = null, key = null, html = "";
+    try { mine = host && host.version ? host.version() : null; } catch (e) {}
+    if (v && v.update) { key = "mac-" + v.update; html = "Matchbox Dashboard <b>" + esc(v.update) + "</b> is available · update from the menu bar on your Mac"; }
+    else if (v && v.tablet && mine && newer(v.tablet, mine)) { key = "tab-" + v.tablet; html = "Tablet app <b>" + esc(v.tablet) + "</b> is ready · choose Install App on Tablet on your Mac"; }
+    var dismissed = null;
+    try { dismissed = localStorage.getItem("plinth.updateDismissed"); } catch (e) {}
+    var el = $("update-note");
+    if (!key || key === dismissed) { el.hidden = true; noteKey = null; return; }
+    if (key !== noteKey) { $("un-text").innerHTML = html; noteKey = key; }
+    el.hidden = false;
+  }
+  $("un-close").addEventListener("click", function (e) {
+    e.stopPropagation();
+    try { localStorage.setItem("plinth.updateDismissed", noteKey); } catch (x) {}
+    $("update-note").hidden = true;
+  });
 
   // ---------- Boot ----------
   var hadCache = loadCache();
