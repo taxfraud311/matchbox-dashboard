@@ -20,6 +20,19 @@ final class Presence {
         return _state
     }
     func set(_ s: State) { lock.lock(); _state = s; lock.unlock() }
+
+    /// The screen saver on its own (not the lock screen), for the tablet's "turn off with the screen saver" option.
+    private var _saver = false
+    private var engineSeen = false
+    var screenSaverRunning: Bool { lock.lock(); defer { lock.unlock() }; return _saver }
+    var onScreenSaverChange: ((Bool) -> Void)?
+    private func setSaver(_ on: Bool) {
+        lock.lock(); let changed = _saver != on; _saver = on; lock.unlock()
+        if changed { onScreenSaverChange?(on) }
+    }
+    static func screenSaverEngineRunning() -> Bool {
+        NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == "com.apple.ScreenSaver.Engine" || $0.localizedName == "ScreenSaverEngine" }
+    }
     func setLocked(_ l: Bool) { lock.lock(); _locked = l; lock.unlock() }
 
     /// Asks the window server directly, which also catches a lock that happened before Plinth started.
@@ -50,8 +63,18 @@ final class Presence {
         dnc.addObserver(forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main) { [weak self] _ in self?.setLocked(true) }
         dnc.addObserver(forName: .init("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in self?.setLocked(false) }
         setLocked(Self.screenIsLocked())
+        dnc.addObserver(forName: .init("com.apple.screensaver.didstart"), object: nil, queue: .main) { [weak self] _ in self?.setSaver(true) }
+        dnc.addObserver(forName: .init("com.apple.screensaver.didstop"), object: nil, queue: .main) { [weak self] _ in self?.engineSeen = false; self?.setSaver(false) }
+        setSaver(Self.screenSaverEngineRunning())
         // Backstop in case a notification is missed.
-        lockTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in self?.setLocked(Self.screenIsLocked()) }
+        lockTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.setLocked(Self.screenIsLocked())
+            // The process check only ever confirms what it can see: it turns the flag on, and turns it off only
+            // after it has seen the engine running, so a missed lookup can't cancel the didstart notification.
+            if Self.screenSaverEngineRunning() { self.engineSeen = true; self.setSaver(true) }
+            else if self.engineSeen { self.engineSeen = false; self.setSaver(false) }
+        }
         let nc = NSWorkspace.shared.notificationCenter
         nc.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in self?.set(.sleeping) }
         nc.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in

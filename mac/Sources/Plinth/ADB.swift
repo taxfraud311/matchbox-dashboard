@@ -152,7 +152,7 @@ final class ADBBridge {
                 }
                 // Every ~12 s: if the display process was killed (crash, low memory, WebView update), bring it back.
                 // Pressing Home doesn't kill the process, so you can still leave the display on purpose.
-                if pollCount % 3 == 0, d.appInstalled == true, prev?.state == "device",
+                if pollCount % 3 == 0, d.appInstalled == true, prev?.state == "device", !screenOff.contains(serial),
                    ConfigStore.shared.bool("adb.autoLaunch", true) {
                     let pid = adb(["-s", serial, "shell", "pidof", ADBBridge.package]).stdout.trimmingCharacters(in: .whitespacesAndNewlines)
                     lock.lock(); let silent = Date().timeIntervalSince(lastTabletPoll); lock.unlock()
@@ -178,6 +178,7 @@ final class ADBBridge {
             } else {
                 d.reversed = false
             }
+            if state != "device" { screenOff.remove(serial) }
             seen[serial] = d
         }
         lock.lock()
@@ -186,6 +187,36 @@ final class ADBBridge {
         devices = seen
         lock.unlock()
         if changed { onChange?() }
+    }
+
+    // MARK: Screen off / on (screen timeout options)
+
+    /// Tablets whose screen this Mac switched off. Only these are woken again, and the watchdog leaves them alone.
+    private var screenOff = Set<String>()
+
+    private func displayInFront(_ serial: String) -> Bool {
+        adb(["-s", serial, "shell", "dumpsys", "activity", "activities"]).stdout
+            .split(separator: "\n").contains { $0.contains("ResumedActivity") && $0.contains(ADBBridge.package) }
+    }
+
+    /// Off: the tablet released its keep-awake and asked; over USB the screen goes dark right away instead of
+    /// waiting for the tablet's own timeout. On: wakes tablets this Mac turned off (the screen saver ended).
+    func setScreen(on: Bool, fromTablet: Bool = false) {
+        queue.async { [weak self] in
+            guard let self, self.adbPath != nil else { return }
+            for d in self.targets() {
+                if on {
+                    guard self.screenOff.remove(d.serial) != nil, !fromTablet else { continue }
+                    self.adb(["-s", d.serial, "shell", "input", "keyevent", "KEYCODE_WAKEUP"])
+                    // Waking brings up the tablet's lock screen; dismiss it (works when there's no PIN or password).
+                    self.adb(["-s", d.serial, "shell", "wm", "dismiss-keyguard"])
+                    self.adb(["-s", d.serial, "shell", "am", "start", "-n", ADBBridge.activity])
+                } else if !self.screenOff.contains(d.serial), self.displayInFront(d.serial) {
+                    self.adb(["-s", d.serial, "shell", "input", "keyevent", "KEYCODE_SLEEP"])
+                    self.screenOff.insert(d.serial)
+                }
+            }
+        }
     }
 
     /// Installs the bundled tablet APK on every connected device.

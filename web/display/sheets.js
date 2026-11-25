@@ -19,11 +19,12 @@
     mem: { title: "Memory", accent: "--mem", icon: C.ICONS.mem },
     disk: { title: "Disk", accent: "--disk", icon: C.ICONS.disk },
     net: { title: "Network", accent: "--down", icon: C.ICONS.net },
+    claude: { title: "Claude Code", accent: "--claude", icon: C.ICONS.claude },
     clock: { title: "World Clock", accent: "--cpu", icon: CLOCK_ICON },
     forecast: { title: "Weather", accent: "--cpu", icon: C.ICONS.chipWeather },
     qr: { title: "Open on your phone", accent: "--cpu", icon: "" },
   };
-  var METRIC = { cpu: 1, gpu: 1, mem: 1, disk: 1, net: 1 };
+  var METRIC = { cpu: 1, gpu: 1, mem: 1, disk: 1, net: 1, claude: 1 };
 
   // ---------- Open / close ----------
   var args = {};
@@ -43,7 +44,7 @@
     wrap.classList.add("shown");
     render();
     clearInterval(refreshTimer);
-    if (METRIC[kind]) { fetchDetail(); refreshTimer = setInterval(fetchDetail, 2000); }
+    if (METRIC[kind]) { fetchDetail(); refreshTimer = setInterval(fetchDetail, kind === "claude" ? 10000 : 2000); }
     else if (kind === "clock") refreshTimer = setInterval(render, 1000);
     poke();
   }
@@ -71,6 +72,20 @@
     if (act === "into") { diskPath.push(b.getAttribute("data-n")); diskSig = ""; refetchDisk(); return; }
     if (act === "crumb") { diskPath = diskPath.slice(0, +b.getAttribute("data-i")); diskSig = ""; refetchDisk(); return; }
     if (act === "rescan") { b.disabled = true; b.textContent = "Starting…"; refetchDisk("&rescan=1"); return; }
+    if (act === "openmac") {
+      b.disabled = true;
+      var o = new XMLHttpRequest(); o.open("POST", "/api/tablet"); o.setRequestHeader("Content-Type", "application/json");
+      o.timeout = 5000;
+      var msg = function (t, again) { var el = $("qr-msg"); if (el) el.textContent = t; if (again) b.disabled = false; };
+      o.onload = function () {
+        var r = {}; try { r = JSON.parse(o.responseText); } catch (e) {}
+        if (o.status === 200) msg(r.presence === "locked" ? "Opened. You’ll see it when you unlock the Mac." : "Opened in your Mac’s browser.");
+        else msg(r.error || "Couldn’t open it on the Mac", true);
+      };
+      o.onerror = o.ontimeout = function () { msg("Couldn’t reach the Mac", true); };
+      o.send(JSON.stringify({ action: "open", url: args.url || "" }));
+      return;
+    }
     if (b && b.getAttribute("data-act") === "speedtest") {
       b.disabled = true; b.textContent = "Starting…";
       var x = new XMLHttpRequest(); x.open("POST", "/api/tablet"); x.setRequestHeader("Content-Type", "application/json");
@@ -94,7 +109,7 @@
 
   function render() {
     if (!current) return;
-    var fn = { cpu: renderCPU, gpu: renderGPU, mem: renderMem, disk: renderDisk, net: renderNet, clock: renderClock, forecast: renderForecast, qr: renderQR }[current];
+    var fn = { cpu: renderCPU, gpu: renderGPU, mem: renderMem, disk: renderDisk, net: renderNet, claude: renderClaude, clock: renderClock, forecast: renderForecast, qr: renderQR }[current];
     var html = fn();
     if (html != null) {
       bodyEl.className = "sheet-body " + (current === "clock" ? "" : current === "forecast" ? "forecast" : current === "disk" ? "disk" : current === "qr" ? "qr" : "two");
@@ -354,7 +369,50 @@
     return '<div class="qr-code"><img src="/api/qr?u=' + encodeURIComponent(u) + '" alt="" onerror="this.parentNode.className=\'qr-code off\'"><span>QR code needs the Mac</span></div>' +
       '<div class="qr-info">' + (args.thumb ? '<div class="qr-thumb"><img src="/img?u=' + encodeURIComponent(args.thumb) + '" alt="" onerror="this.parentNode.remove()"></div>' : "") +
       '<div class="qr-title">' + esc(args.title || host) + '</div><div class="qr-url">' + esc(short) + "</div>" +
-      '<div class="qr-hint"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg>Point your phone’s camera at the code to open it.</div></div>';
+      '<div class="qr-hint"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg>Point your phone’s camera at the code to open it.</div>' +
+      '<div class="qr-actions"><button class="btn2" data-act="openmac"' + (C.presence() === "awake" || C.presence() === "locked" ? "" : " disabled") + ">" +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8.5 21h7M12 17v4"/></svg>Open on Mac</button>' +
+      '<span class="note2" id="qr-msg"></span></div></div>';
+  }
+
+  // ---------- Claude Code ----------
+  function renderClaude() {
+    var d = detail, x = d.ctx, tok = C.tok, until = C.until;
+    if (!d.today && !d.error) return '<div class="col"><div class="note2">Reading Claude Code usage…</div></div><div class="col"></div>';
+    if (!d.any) return '<div class="col"><div class="big" style="font-size:44px">No activity yet</div><div class="note2">Usage appears here once you use Claude Code on this Mac (the app’s Code tab or the claude command). Chats in the Claude app aren’t stored on the Mac.</div></div><div class="col"></div>';
+    $("sheet-sub").textContent = x ? x.model + " · " + tok(x.window) + " context" : "";
+    var t = d.today || {}, w = d.week || {}, b = d.block;
+    var top = Math.max.apply(null, (d.days || []).map(function (v) { return v.tokens; }).concat([1]));
+    var days = (d.days || []).map(function (v, i, all) {
+      var dt = new Date(v.t);
+      return '<div' + (i === all.length - 1 ? ' class="today"' : "") + '><i style="height:' + Math.max(2, v.tokens / top * 70).toFixed(1) + 'px"></i><span>' +
+        C.fmt(dt, { weekday: "short" }) + "</span></div>";
+    }).join("");
+    function rows(list) {
+      var mx = Math.max.apply(null, (list || []).map(function (r) { return r.tokens; }).concat([1]));
+      return '<div class="applist">' + (list || []).map(function (r) {
+        return '<div class="app"><div class="an"><b>' + esc(r.name) + '</b><div class="bar2"><i style="width:' + Math.max(2, r.tokens / mx * 100).toFixed(1) +
+          '%"></i></div></div><div class="av">' + tok(r.tokens) + (r.at ? "<small>" + C.ago(r.at) + "</small>" : "") + "</div></div>";
+      }).join("") + "</div>";
+    }
+    var resetWhen = d.reset ? new Date(d.reset) : null;
+    return '<div class="col">' +
+      (x ? '<div class="panel-title">Context left · ' + esc(x.session || x.folder || "Latest session") + '</div><div class="big">' + Math.round(x.left) + '<span class="unit">%</span></div>' +
+        '<div class="bar2" style="height:10px;border-radius:5px;background:var(--track);overflow:hidden"><i style="display:block;height:100%;background:var(--claude);width:' + (100 - x.left).toFixed(1) + '%"></i></div>' +
+        '<div class="note2">' + tok(x.used) + " of " + tok(x.window) + " tokens used · last reply " + C.ago(x.at) + "</div>" : "") +
+      "<div>" +
+        kv("Weekly reset", resetWhen ? "in " + until(d.reset) + " · " + C.fmt(resetWhen, { weekday: "short", hour: "numeric", minute: "2-digit", hour12: !(C.cfg() || {}).clock24h }) : "Not set") +
+        kv("5-hour window (est.)", b ? "ends in " + until(b.end) : "No recent use") +
+        kv("Tokens this window", b ? tok(b.tokens) : "–") +
+      "</div>" +
+      '<div class="panel"><div class="panel-title">Last 7 days</div><div class="cl-days">' + days + "</div></div></div>" +
+      '<div class="col"><div class="tiles">' +
+        [["Today", tok(t.tokens)], [d.weekFromReset ? "This week" : "Last 7 days", tok(w.tokens)], ["Replies today", (t.messages || 0) + ""],
+         ["Output today", tok(t.output)], ["Cache writes", tok(t.cacheWrite)], ["Cache reads", tok(t.cacheRead)]]
+          .map(function (p) { return '<div class="t"><div class="k">' + p[0] + '</div><div class="v">' + p[1] + "</div></div>"; }).join("") + "</div>" +
+      '<div class="panel-title">' + (d.weekFromReset ? "This week" : "Last 7 days") + " by session</div>" + rows((d.sessions || []).slice(0, 4)) +
+      ((d.models || []).length > 1 ? '<div class="panel-title">By model</div>' + rows(d.models) : "") +
+      "</div>";
   }
 
   // ---------- Network ----------
@@ -490,7 +548,7 @@
   }
 
   // ---------- Hook up the tap targets ----------
-  [["t-cpu", "cpu"], ["t-gpu", "gpu"], ["t-mem", "mem"], ["t-disk", "disk"], ["t-net", "net"]].forEach(function (p) {
+  [["t-cpu", "cpu"], ["t-gpu", "gpu"], ["t-mem", "mem"], ["t-disk", "disk"], ["t-net", "net"], ["t-claude", "claude"]].forEach(function (p) {
     $(p[0]).addEventListener("click", function () { open(p[1]); });
   });
   $("clock-main").addEventListener("click", function () { open("clock"); });

@@ -54,6 +54,8 @@ final class ConfigStore {
       "headlinesPerCard": 3,
       "speedTest": { "enabled": true, "intervalMinutes": 60 },
       "brightness": { "day": -1, "night": 0.2 },
+      "screen": { "mode": "always", "timeoutMinutes": 10 },
+      "claude": { "enabled": false, "resetDay": -1, "resetTime": "09:00" },
       "adb": { "autoReverse": true, "autoLaunch": true, "anyDevice": false, "allowed": [], "path": "" }
     }
     """

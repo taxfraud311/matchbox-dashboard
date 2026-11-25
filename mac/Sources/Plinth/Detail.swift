@@ -69,6 +69,7 @@ final class DetailService {
         case "gpu": return gpu()
         case "disk": return disk()
         case "net": return net()
+        case "claude": return ClaudeUsage.shared.detail()
         default: return ["error": "unknown"]
         }
     }

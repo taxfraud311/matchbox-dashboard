@@ -46,6 +46,12 @@
       <div class="sub" id="net-sub">&nbsp;</div>
       <canvas class="spark" id="net-spark"></canvas>
     </div>
+    <div class="glass tile tappable" id="t-claude" style="--accent: var(--claude)" hidden>
+      <div class="tile-head"><span class="ico" data-icon="claude"></span><span class="label">Claude</span><span class="aside" id="cl-aside"></span></div>
+      <div class="value"><span id="cl-val">–</span><span class="unit">% left</span></div>
+      <div class="sub" id="cl-sub">&nbsp;</div>
+      <div class="bar"><div class="fill" id="cl-bar"></div></div>
+    </div>
   </section>
 
   <!-- RIGHT: clock + cycling info cards -->
@@ -94,6 +100,7 @@
     </div>
   </div>
 </main>
+<div id="screen-off"></div>
 <script src="palette.js"></script>
 <script src="app.js"></script>
 <script src="sheets.js"></script>

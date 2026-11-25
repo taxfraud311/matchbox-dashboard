@@ -69,6 +69,7 @@ public class MainActivity extends Activity {
     private volatile long lastHeartbeat = 0;   // set by the page after every successful data poll
     private boolean probing = false;
 
+    private volatile boolean keepAwake = true;
     private NsdManager nsd;
     private NsdManager.DiscoveryListener discovery;
 
@@ -81,6 +82,11 @@ public class MainActivity extends Activity {
         w.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
                 | WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
                 | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
+        if (Build.VERSION.SDK_INT >= 27) {
+            // Android 8.1+ ignores the window flags above for this: show over the lock screen and wake with it.
+            setShowWhenLocked(true);
+            setTurnScreenOn(true);
+        }
         if (Build.VERSION.SDK_INT >= 28) {
             w.getAttributes().layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
         }
@@ -374,6 +380,19 @@ public class MainActivity extends Activity {
             });
         }
 
+        /** false lets the screen turn off (screen timeout options): drops keep-awake and dims to the minimum
+         *  until the tablet's own timeout (or the Mac, over USB) switches it off. true restores always-on. */
+        @JavascriptInterface
+        public void setKeepAwake(final boolean on) {
+            ui.post(() -> {
+                keepAwake = on;
+                Window w = getWindow();
+                if (on) w.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                else w.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                root.setKeepScreenOn(on);
+            });
+        }
+
         @JavascriptInterface
         public void heartbeat() { lastHeartbeat = android.os.SystemClock.elapsedRealtime(); }
 
@@ -394,7 +413,7 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public String version() { return "1.3"; }
+        public String version() { return "1.4"; }
     }
 
     // ---------- Fullscreen / lifecycle ----------
@@ -422,9 +441,11 @@ public class MainActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        if (keepAwake) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         goImmersive();
         web.onResume();
+        // The screen came back on (power button, or the Mac woke it): restart the page's screen timeout.
+        web.evaluateJavascript("window.plinthResumed && window.plinthResumed()", null);
         if (currentBase == null) probeAndLoad(); else scheduleWatchdog();
     }
 

@@ -102,6 +102,15 @@
       };
       el.addEventListener(el.hasAttribute("data-lazy") ? "change" : (el.type === "checkbox" ? "change" : "input"), handler);
     });
+    $$("select[data-key]").forEach(function (el) {
+      var path = el.getAttribute("data-key"), v = get(path);
+      el.value = v == null ? "" : String(v);
+      if (el._bound) return; el._bound = true;
+      el.addEventListener("change", function () {
+        var val = el.hasAttribute("data-num") ? Number(el.value) : el.value;
+        save(path, val, true); syncDeps();
+      });
+    });
     $$(".seg[data-key]").forEach(function (seg) {
       var path = seg.getAttribute("data-key");
       $$("button", seg).forEach(function (b) { b.classList.toggle("on", b.getAttribute("data-v") === get(path)); });
@@ -109,13 +118,22 @@
       seg.addEventListener("click", function (e) {
         var b = e.target.closest("button"); if (!b) return;
         $$("button", seg).forEach(function (x) { x.classList.toggle("on", x === b); });
-        save(path, b.getAttribute("data-v"));
+        save(path, b.getAttribute("data-v")); syncDeps();
       });
     });
+    syncDeps();
     renderLeagues(); renderFeeds(); syncDayOptions(); renderChannels(); renderShows(); renderClocks(); renderBsky(); renderSteam();
     renderFX(); renderSlick(); renderRadar(); keyStatus(); $("#kj-level").value = get("kanji.level") || "jlpt-4";
     $("#favorites").value = (get("sports.favorites") || []).join(", ");
     $("#loc-current").textContent = locLabel();
+  }
+
+  // Rows that only apply to one choice: data-dep="path=value".
+  function syncDeps() {
+    $$("[data-dep]").forEach(function (r) {
+      var p = r.getAttribute("data-dep").split("=");
+      r.style.display = String(get(p[0])) === p[1] ? "" : "none";
+    });
   }
 
   function locLabel() {

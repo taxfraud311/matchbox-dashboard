@@ -25,7 +25,7 @@ body.day {
   --glass-inset: inset 0 1.5px 0 rgba(255,255,255,0.95), inset 0 -1px 0 rgba(255,255,255,0.35), inset 0 0 0 1px rgba(255,255,255,0.25);
   --track: rgba(28, 28, 30, 0.10);
   --divider: rgba(28, 28, 30, 0.10);
-  --cpu: #0a72e8;  --gpu: #a447d6;  --mem: #1f9e48;  --disk: #e07800;
+  --cpu: #0a72e8;  --gpu: #a447d6;  --mem: #1f9e48;  --disk: #e07800;  --claude: #c8603d;
   --down: #0a8fa8; --up: #e2365f;   --live: #e5322d; --star: #e09400;
   --cloud: #9aa0aa; --cloud-dark: #6e7480; --sun: #ffb300; --moon: #8a8f99; --rain: #0a72e8; --bolt: #ffb300;
   --chip-bg: rgba(255,255,255,0.65);
@@ -44,7 +44,7 @@ body.night {
   --glass-inset: inset 0 1px 0 rgba(255,255,255,0.18);
   --track: rgba(255, 255, 255, 0.20);
   --divider: rgba(255, 255, 255, 0.22);
-  --cpu: #5aaeff;  --gpu: #e09cff;  --mem: #3ee66b;  --disk: #ffb84d;
+  --cpu: #5aaeff;  --gpu: #e09cff;  --mem: #3ee66b;  --disk: #ffb84d;  --claude: #ff9a70;
   --down: #5de6ff; --up: #ff7096;   --live: #ff5b55; --star: #ffd60a;
   --cloud: #e5e5ea; --cloud-dark: #aeaeb2; --sun: #ffd60a; --moon: #f2f2f7; --rain: #5aaeff; --bolt: #ffd60a;
   --chip-bg: rgba(255,255,255,0.14);
@@ -183,7 +183,8 @@ body.offline #metrics { opacity: 0.45; transition: opacity 0.6s; }
 .card-body { flex: 1; position: relative; min-height: 0; z-index: 1; }
 .slide { position: absolute; inset: 0; padding: 10px 20px 14px; opacity: 0; transform: translateY(10px) scale(0.985);
          transition: opacity 0.5s ease, transform 0.6s cubic-bezier(.2,.8,.2,1); display: flex; flex-direction: column; }
-.slide.show { opacity: 1; transform: none; }
+.slide { pointer-events: none; }   /* the hidden layer (the previous card) must not catch taps */
+.slide.show { opacity: 1; transform: none; pointer-events: auto; }
 .progress { height: 3px; margin: 0 26px 10px; border-radius: 2px; background: var(--track); overflow: hidden; flex: none; position: relative; z-index: 1; }
 .progress div { height: 100%; width: 0; background: var(--text-3); border-radius: 2px; }
 
@@ -655,3 +656,44 @@ body.compact .net-val { font-size: 23px; }
 body.compact #t-net .sub { grid-column: 1 / -1; font-size: 13px; text-align: left; padding-bottom: 0; margin-top: 3px; align-self: start; }
 body.compact #t-net .spark { height: 22px; }
 body.compact .glance .g-loc { max-width: 220px; }
+
+/* ---------- Claude tile: shares the bottom row with Network ---------- */
+#t-claude[hidden] { display: none; }
+body.claude #metrics .wide { grid-column: auto; }
+body.claude #t-net .net-row { flex-direction: column; gap: 0; margin-top: 4px; }
+body.claude #t-net .net-val { font-size: 32px; }
+body.claude #t-net .sub { font-size: 15px; margin-top: 2px; }
+body.claude #t-net .spark { height: 40px; }
+#t-claude .value { font-size: 46px; margin-top: 6px; }
+#t-claude .value .unit { font-size: 0.42em; }
+#t-claude .sub { font-size: 16px; margin-top: 4px; }
+#t-claude .bar { height: 8px; margin-top: 9px; }
+#t-claude .bar .fill.hot { background: var(--up); }
+body.compact.claude #metrics { grid-template-rows: repeat(6, minmax(0, 1fr)); min-height: 0; }
+body.compact.claude .tile { padding-top: 7px; overflow: hidden; }
+body.compact.claude .tile-head { height: 20px; }
+body.compact.claude .value { font-size: 34px; margin-top: 2px; }
+body.compact.claude .spark { height: 28px; }
+body.compact.claude #t-disk .bar { margin-top: 5px; }
+body.compact.claude #t-net .net-row { flex-direction: row; gap: 12px; }
+body.compact.claude #t-net .net-val { font-size: 23px; }
+body.compact.claude #t-net .sub { font-size: 13px; margin-top: 3px; }
+body.compact.claude #t-net .spark { height: 22px; }
+body.compact #t-claude .value { font-size: 34px; margin-top: 2px; }
+body.compact #t-claude .sub { grid-column: 1 / -1; font-size: 13px; text-align: left; padding-bottom: 0; margin-top: 1px; align-self: start; }
+body.compact #t-claude .bar { grid-column: 1 / -1; height: 6px; margin-top: 5px; }
+.cl-days { display: flex; align-items: flex-end; gap: 8px; height: 92px; }
+.cl-days div { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; justify-content: flex-end; }
+.cl-days i { display: block; width: 100%; border-radius: 6px 6px 3px 3px; background: var(--claude); min-height: 3px; }
+.cl-days span { font-size: 13px; font-weight: 700; color: var(--text-3); }
+.cl-days div.today span { color: var(--text); }
+
+/* ---------- Screen timeout: black while the tablet's own timeout (or the Mac) turns the panel off ---------- */
+#screen-off { position: fixed; inset: 0; background: #000; z-index: 9999; opacity: 0; pointer-events: none; transition: opacity 1.2s ease; }
+body.screen-off #screen-off { opacity: 1; pointer-events: auto; }
+
+/* ---------- QR sheet: Open on Mac ---------- */
+.qr-actions { display: flex; align-items: center; gap: 14px; margin-top: 6px; }
+.qr-actions .btn2 { display: inline-flex; align-items: center; gap: 9px; }
+.qr-actions .btn2 svg { width: 22px; height: 22px; }
+.qr-actions .note2 { font-size: 16px; }

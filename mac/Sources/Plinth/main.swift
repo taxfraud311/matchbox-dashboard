@@ -70,6 +70,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         MoreFeeds.shared.start()
         ADBBridge.shared.onChange = { [weak self] in DispatchQueue.main.async { self?.refreshMenu() } }
         ADBBridge.shared.start()
+        ClaudeUsage.shared.start()
+        Presence.shared.onScreenSaverChange = { saver in
+            // Screen-saver mode: the tablet asks to be switched off itself; waking it is up to the Mac, since a
+            // tablet with its screen off has stopped listening.
+            if !saver, ConfigStore.shared.string("screen.mode", "always") == "screensaver" { ADBBridge.shared.setScreen(on: true) }
+        }
+        // Switched back to Always On while the screen is off: wake it.
+        NotificationCenter.default.addObserver(forName: .plinthConfigChanged, object: nil, queue: .main) { _ in
+            if ConfigStore.shared.string("screen.mode", "always") == "always" { ADBBridge.shared.setScreen(on: true) }
+        }
 
         server = HTTPServer { [weak self] req in self?.route(req) ?? .text("unavailable", status: 500) }
         server.onStateChange = { [weak self] in DispatchQueue.main.async { self?.refreshMenu() } }
@@ -199,6 +209,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         refreshMenu()
     }
 
+    func feedsPayload() -> [String: Any] {
+        var f = FeedService.shared.snapshot
+        let media = MediaFeeds.shared.snapshot
+        f["youtube"] = media["youtube"]; f["anime"] = media["anime"]
+        let extra = ExtraFeeds.shared.snapshot
+        for k in ["bluesky", "steamUpcoming", "steamDeals", "steam"] { f[k] = extra[k] }
+        var errs = f["errors"] as? [String: Any] ?? [:]
+        for (k, v) in media["errors"] as? [String: Any] ?? [:] { errs[k] = v }
+        for (k, v) in extra["errors"] as? [String: Any] ?? [:] { errs[k] = v }
+        let more = MoreFeeds.shared.snapshot
+        for k in ["steamRecent", "steamClosest", "steamNews", "fx", "kanji", "radar", "slickdeals"] { f[k] = more[k] }
+        for (k, v) in more["errors"] as? [String: Any] ?? [:] { errs[k] = v }
+        f["errors"] = errs
+        return f
+    }
+
+    /// Links the tablet may ask this Mac to open: web links that appear in the current feeds, or on the few
+    /// sites whose links the display builds itself (scores, anime, Bluesky posts, Steam store pages).
+    func openableURL(_ s: String) -> URL? {
+        guard s.count < 4096, let u = URL(string: s), let scheme = u.scheme?.lowercased(), scheme == "https" || scheme == "http",
+              let host = u.host?.lowercased() else { return nil }
+        if ["www.espn.com", "anilist.co", "bsky.app", "store.steampowered.com"].contains(host) { return u }
+        var found = false
+        func walk(_ v: Any) {
+            if found { return }
+            if let x = v as? String { if x == s { found = true } }
+            else if let d = v as? [String: Any] { for x in d.values { walk(x) } }
+            else if let a = v as? [Any] { for x in a { walk(x) } }
+        }
+        walk(feedsPayload())
+        return found ? u : nil
+    }
+
     // MARK: Routes
 
     func route(_ r: HTTPRequest) -> HTTPResponse {
@@ -228,6 +271,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 "host": Host.current().localizedName ?? "Mac",
                 "tz": TimeZone.current.identifier,
                 "presence": Presence.shared.state.rawValue,
+                "screen": ["mode": ConfigStore.shared.string("screen.mode", "always"),
+                           "timeout": max(1, ConfigStore.shared.int("screen.timeoutMinutes", 10)) * 60,
+                           "saver": Presence.shared.screenSaverRunning] as [String: Any],
                 "day": [
                     "mode": ConfigStore.shared.string("dayColors.mode", "wallpaper"),
                     "custom": ConfigStore.shared.string("dayColors.custom", "#3a82f7"),
@@ -235,22 +281,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 ] as [String: Any],
             ]
             if r.query["h"] != nil { body["h"] = s.history }
+            if let c = ClaudeUsage.shared.summary { body["claude"] = c }
             return .json(body)
 
         case ("GET", "/api/feeds"):
-            var f = FeedService.shared.snapshot
-            let media = MediaFeeds.shared.snapshot
-            f["youtube"] = media["youtube"]; f["anime"] = media["anime"]
-            let extra = ExtraFeeds.shared.snapshot
-            for k in ["bluesky", "steamUpcoming", "steamDeals", "steam"] { f[k] = extra[k] }
-            var errs = f["errors"] as? [String: Any] ?? [:]
-            for (k, v) in media["errors"] as? [String: Any] ?? [:] { errs[k] = v }
-            for (k, v) in extra["errors"] as? [String: Any] ?? [:] { errs[k] = v }
-            let more = MoreFeeds.shared.snapshot
-            for k in ["steamRecent", "steamClosest", "steamNews", "fx", "kanji", "radar", "slickdeals"] { f[k] = more[k] }
-            for (k, v) in more["errors"] as? [String: Any] ?? [:] { errs[k] = v }
-            f["errors"] = errs
-            return .json(f)
+            return .json(feedsPayload())
 
         case ("GET", "/img"):
             // Thumbnails/cover art fetched by the Mac (allow-listed hosts only) so a USB-only tablet can show them.
@@ -270,6 +305,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let j = (try? JSONSerialization.jsonObject(with: r.body)) as? [String: Any] ?? [:]
             switch j["action"] as? String ?? "" {
             case "speedtest": MetricsCollector.shared.runSpeedTest(); return .json(["ok": true])
+            case "screen":
+                // The tablet switched its screen off (timeout or screen saver) or back on.
+                ADBBridge.shared.setScreen(on: (j["on"] as? Bool) ?? true, fromTablet: true); return .json(["ok": true])
+            case "open":
+                // "Open on Mac" in the QR sheet. Only links the dashboard itself is showing, so nothing else on the
+                // network can make this Mac open arbitrary pages.
+                guard let u = openableURL(j["url"] as? String ?? "") else { return .json(["error": "That link can’t be opened"], status: 403) }
+                DispatchQueue.main.async { NSWorkspace.shared.open(u) }
+                return .json(["ok": true, "presence": Presence.shared.state.rawValue])
             case "cycle":
                 // Long-press menu on the carousel: time between cards.
                 guard let n = (j["seconds"] as? NSNumber)?.intValue, (4...600).contains(n) else { return .json(["error": "bad value"], status: 400) }

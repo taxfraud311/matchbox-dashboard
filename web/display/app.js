@@ -27,6 +27,7 @@
   ICONS.chipKanji = '<svg viewBox="0 0 24 24"><text x="12" y="18" text-anchor="middle" font-size="16" font-weight="700" fill="#fff" font-family="sans-serif">字</text></svg>';
   ICONS.chipRadar = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8.5" opacity=".55"/><circle cx="12" cy="12" r="4.5" opacity=".75"/><path d="M12 12l6-6"/><circle cx="12" cy="12" r="1.3" fill="#fff"/></svg>';
   ICONS.chipSlick = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 21V11H3.5V21zM7 11l4-8c1.6 0 2.7 1.3 2.4 2.9L12.8 9H19a2 2 0 0 1 2 2.3l-1.3 7.4A2.6 2.6 0 0 1 17.2 21H7"/></svg>';
+  ICONS.claude = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6L5.6 18.4"/></svg>';
   Array.prototype.forEach.call(document.querySelectorAll("[data-icon]"), function (el) {
     el.innerHTML = ICONS[el.getAttribute("data-icon")] || "";
   });
@@ -241,6 +242,36 @@
     spark("net-spark", [{ data: hist.tx, color: "--up", lineOnly: true }, { data: hist.rx, color: "--down" }], nm);
   }
 
+  // ---------- Claude Code usage (optional tile, sent with each metrics poll) ----------
+  function tok(n) {
+    n = n || 0;
+    var t = function (v, d) { return nf(v, d).replace(/\.0$/, ""); };
+    return n >= 1e9 ? t(n / 1e9, 1) + "B" : n >= 1e6 ? t(n / 1e6, n >= 1e8 ? 0 : 1) + "M" : n >= 1e3 ? Math.round(n / 1e3) + "K" : String(n);
+  }
+  function until(ms) {
+    var s = Math.max(0, (ms - now().getTime()) / 1000), d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+    return d ? d + "d " + h + "h" : h ? h + "h " + m + "m" : m + "m";
+  }
+  var claudeOn = null, lastClaude = null;
+  function renderClaude(c) {
+    var on = !!c;
+    if (on !== claudeOn) {
+      claudeOn = on; $("t-claude").hidden = !on;
+      document.body.classList.toggle("claude", on);
+      [60, 400, 900].forEach(function (ms) { setTimeout(sizeCanvases, ms); });
+    }
+    lastClaude = c || null;
+    if (!c) return;
+    var x = c.ctx;
+    setText("cl-val", x ? Math.round(x.left) + "" : "–");
+    setText("cl-aside", x ? x.model : "");
+    $("cl-bar").style.width = x ? (100 - x.left).toFixed(1) + "%" : "0%";
+    $("cl-bar").className = "fill" + (x && x.left < 15 ? " hot" : "");
+    var sub = c.loading ? "Reading Claude Code usage…" : !c.any ? "No Claude Code activity yet" :
+      tok(c.today) + " today" + (c.reset ? " · reset " + until(c.reset) : "");
+    setText("cl-sub", sub);
+  }
+
   function setTheme(t) {
     if (t === theme && document.body.classList.contains(t)) return;
     theme = t;
@@ -275,7 +306,7 @@
       applyDay(forcedDay ? mergeDay(j.day, forcedDay) : j.day);
       if (host && host.setBrightness && j.brightness !== lastBrightness) {
         lastBrightness = j.brightness;
-        try { host.setBrightness(j.brightness); } catch (e) {}
+        if (screenOn) { try { host.setBrightness(j.brightness); } catch (e) {} }
       }
       // The Mac app was updated/restarted: reload once to pick up new display code. Keep rendering
       // meanwhile, and if the reload never happens (stalled navigation), try again after 20 s.
@@ -287,6 +318,8 @@
       if (reloadToken === null) reloadToken = j.reload;
       if (j.rev !== cfgRev) loadConfig(j.rev);
       if (j.fv !== feedsVer) loadFeeds(j.fv);
+      if (j.screen) screenFromMac(j.screen);
+      renderClaude(j.claude);
       if (j.m) {
         saveCache(false);
         renderMetrics(j.m);
@@ -1134,6 +1167,7 @@
     cfg: function () { return cfg; }, feeds: function () { return feeds; }, metrics: function () { return lastMetrics; },
     hist: hist, HMAX: HMAX, now: now, fmt: fmt, tz: function () { return tz; }, wxIcon: wxIcon, wxKind: wxKind, esc: esc,
     bits: bits, bitsStr: bitsStr, gib: gib, gb: gb, mbps: mbps, ago: ago, fetchJSON: fetchJSON, ICONS: ICONS,
+    tok: tok, until: until, claude: function () { return lastClaude; }, presence: function () { return presence; },
     cssVar: cssVar, rgba: rgba, scale: function () { return stageScale; }, standby: function () { return standby; }, theme: function () { return theme; },
   };
   var forcedTheme = (location.search.match(/[?&]theme=(day|night)/) || [])[1];
@@ -1154,6 +1188,46 @@
     PlinthPalette.apply(day);
     colorCache = {};   // sparkline colors are read from CSS variables
   }
+
+  // ---------- Screen timeout ----------
+  // "always": keep the screen on (default). "timeout": off after N minutes without a touch. "screensaver": off while
+  // the Mac's screen saver runs (not the lock screen). Off = the tablet app drops its keep-awake and the page goes
+  // black, so the tablet's own timeout switches the panel off; over USB the Mac switches it off right away.
+  var screenMode = "always", screenTimeout = 600, screenOn = true, lastTouch = Date.now(), lastSaver = null, lastTick = Date.now();
+  function setScreen(on) {
+    if (on === screenOn) return;
+    screenOn = on;
+    document.body.classList.toggle("screen-off", !on);
+    if (host && host.setKeepAwake) { try { host.setKeepAwake(on); } catch (e) {} }
+    if (host && host.setBrightness) {
+      try { host.setBrightness(on ? (lastBrightness == null ? -1 : lastBrightness) : 0.01); } catch (e) {}
+    }
+    var x = new XMLHttpRequest(); x.open("POST", "/api/tablet"); x.setRequestHeader("Content-Type", "application/json");
+    x.send(JSON.stringify({ action: "screen", on: on }));
+  }
+  function wake() { lastTouch = Date.now(); if (!screenOn) setScreen(true); }
+  try { var sv = JSON.parse(localStorage.getItem("plinth.screen") || "null"); if (sv) { screenMode = sv.mode; screenTimeout = sv.timeout; } } catch (e) {}
+  function screenFromMac(sc) {
+    if (sc.mode !== screenMode || sc.timeout !== screenTimeout) {
+      try { localStorage.setItem("plinth.screen", JSON.stringify({ mode: sc.mode, timeout: sc.timeout })); } catch (e) {}
+    }
+    screenMode = sc.mode || "always"; screenTimeout = sc.timeout || 600;
+    if (screenMode === "always") { lastSaver = null; if (!screenOn) setScreen(true); return; }
+    if (screenMode === "screensaver") {
+      // Act on changes only, so waking the tablet by hand while the screen saver runs keeps it on.
+      if (sc.saver !== lastSaver) { lastSaver = sc.saver; if (lastSaver !== null) setScreen(!sc.saver); }
+    } else lastSaver = null;
+  }
+  setInterval(function () {
+    var t = Date.now();
+    if (t - lastTick > 8000) wake();          // the page was paused: the screen just came back on
+    lastTick = t;
+    if (screenMode === "timeout" && screenOn && t - lastTouch > screenTimeout * 1000) setScreen(false);
+  }, 1000);
+  document.addEventListener("pointerdown", wake, true);
+  document.addEventListener("visibilitychange", function () { if (!document.hidden) wake(); });
+  window.plinthResumed = wake;
+  $("screen-off").addEventListener("pointerdown", function (e) { e.stopPropagation(); e.preventDefault(); wake(); });
 
   // ---------- Boot ----------
   var hadCache = loadCache();
