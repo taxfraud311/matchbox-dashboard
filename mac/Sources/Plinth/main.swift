@@ -60,6 +60,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var updateItem = NSMenuItem()
     var currentPort: Int = 0
     var currentLocalOnly = false
+    /// Keeps App Nap from throttling the server and metrics while no window is open. Idle system sleep stays allowed.
+    var activity: NSObjectProtocol?
+    var serverWatchdog: Timer?
 
     func applicationDidFinishLaunching(_ n: Notification) {
         Appearance.shared.start()
@@ -73,21 +76,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ADBBridge.shared.onChange = { [weak self] in DispatchQueue.main.async { self?.refreshMenu() } }
         ADBBridge.shared.start()
         ClaudeUsage.shared.start()
+        Stocks.shared.start()
         Updater.shared.onChange = { [weak self] in self?.refreshMenu() }
         Updater.shared.start()
-        Presence.shared.onScreenSaverChange = { saver in
-            // Screen-saver mode: the tablet asks to be switched off itself; waking it is up to the Mac, since a
-            // tablet with its screen off has stopped listening.
-            if !saver, ConfigStore.shared.string("screen.mode", "always") == "screensaver" { ADBBridge.shared.setScreen(on: true) }
+        activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep],
+                                                          reason: "Serving the tablet display")
+        Presence.shared.onIdleChange = { idle in
+            // Screen-saver mode: over USB the Mac switches the tablet off itself (the tablet may not get another
+            // poll in before the Mac sleeps), and wakes it again, since a tablet with its screen off has stopped listening.
+            guard ConfigStore.shared.string("screen.mode", "always") == "screensaver" else { return }
+            ADBBridge.shared.setScreen(on: !idle)
         }
         // Switched back to Always On while the screen is off: wake it.
+        // (Only when the mode itself changes, so a tablet you switched off with its power button stays off.)
+        var lastMode = ConfigStore.shared.string("screen.mode", "always")
         NotificationCenter.default.addObserver(forName: .plinthConfigChanged, object: nil, queue: .main) { _ in
-            if ConfigStore.shared.string("screen.mode", "always") == "always" { ADBBridge.shared.setScreen(on: true) }
+            let mode = ConfigStore.shared.string("screen.mode", "always")
+            if mode == "always", lastMode != "always" { ADBBridge.shared.setScreen(on: true, force: true) }
+            lastMode = mode
         }
 
         server = HTTPServer { [weak self] req in self?.route(req) ?? .text("unavailable", status: 500) }
+        server.asyncHandler = { req, reply in
+            // Thumbnails and radar tiles download without tying up a server thread each.
+            if req.method == "GET", req.path == "/api/stocks/search" {
+                guard req.isLoopback else { reply(.text("The manager is only available on the Mac itself.", status: 403)); return true }
+                Stocks.shared.search(req.query["q"] ?? "") { reply(.json($0)) }
+                return true
+            }
+            guard req.method == "GET", req.path == "/img" else { return false }
+            MediaFeeds.shared.imageAsync(req.query["u"] ?? "") { r in
+                guard let (data, type) = r else { return reply(.text("Not found", status: 404)) }
+                reply(HTTPResponse(status: 200, headers: ["Content-Type": type, "Cache-Control": "max-age=86400"], body: data))
+            }
+            return true
+        }
         server.onStateChange = { [weak self] in DispatchQueue.main.async { self?.refreshMenu() } }
         startServer()
+        // A fresh listener after waking (network interfaces come back changed) and whenever it isn't listening.
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.server.restart(after: 3)
+        }
+        serverWatchdog = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            guard let self, !self.server.isReady else { return }
+            NSLog("HTTP listener not ready (\(self.server.lastError ?? "no error")); restarting")
+            self.server.restart()
+        }
         NotificationCenter.default.addObserver(forName: .plinthConfigChanged, object: nil, queue: .main) { [weak self] _ in
             guard let self else { return }
             let port = ConfigStore.shared.int("port", 8787)
@@ -273,6 +307,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let more = MoreFeeds.shared.snapshot
         for k in ["steamRecent", "steamClosest", "steamNews", "fx", "kanji", "radar", "slickdeals"] { f[k] = more[k] }
         for (k, v) in more["errors"] as? [String: Any] ?? [:] { errs[k] = v }
+        f["stocks"] = Stocks.shared.snapshot["stocks"]
+        if let e = Stocks.shared.lastError { errs["stocks"] = e }
         f["errors"] = errs
         return f
     }
@@ -318,14 +354,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             var body: [String: Any] = [
                 "m": s.latest, "theme": theme, "macDark": Appearance.shared.isDark,
                 "rev": ConfigStore.shared.revision,
-                "fv": "\((FeedService.shared.snapshot["version"] as? Int) ?? 0).\(MediaFeeds.shared.version).\(ExtraFeeds.shared.version).\(MoreFeeds.shared.version)",
+                "fv": "\((FeedService.shared.snapshot["version"] as? Int) ?? 0).\(MediaFeeds.shared.version).\(ExtraFeeds.shared.version).\(MoreFeeds.shared.version).\(Stocks.shared.version)",
                 "reload": reloadToken, "brightness": bright,
                 "host": Host.current().localizedName ?? "Mac",
                 "tz": TimeZone.current.identifier,
                 "presence": Presence.shared.state.rawValue,
                 "screen": ["mode": ConfigStore.shared.string("screen.mode", "always"),
                            "timeout": max(1, ConfigStore.shared.int("screen.timeoutMinutes", 10)) * 60,
-                           "saver": Presence.shared.screenSaverRunning] as [String: Any],
+                           "saver": Presence.shared.macIdle] as [String: Any],
                 "day": [
                     "mode": ConfigStore.shared.string("dayColors.mode", "wallpaper"),
                     "custom": ConfigStore.shared.string("dayColors.custom", "#3a82f7"),
@@ -376,6 +412,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 guard let n = (j["seconds"] as? NSNumber)?.intValue, (4...600).contains(n) else { return .json(["error": "bad value"], status: 400) }
                 ConfigStore.shared.update(with: ["cycleSeconds": n]); return .json(["ok": true])
             default: return .json(["error": "not allowed"], status: 403)
+            }
+
+        case ("POST", "/api/claude/bridge"):
+            return managerOnly {
+                let j = (try? JSONSerialization.jsonObject(with: r.body)) as? [String: Any] ?? [:]
+                let err = (j["action"] as? String) == "connect" ? ClaudeBridge.connect() : ClaudeBridge.disconnect()
+                if let err { return .json(["error": err], status: 500) }
+                return .json(ClaudeBridge.status)
             }
 
         case ("GET", "/api/update"):
@@ -446,6 +490,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         for (k, v) in MediaFeeds.shared.snapshot["errors"] as? [String: Any] ?? [:] { e[k] = v }
                         for (k, v) in ExtraFeeds.shared.snapshot["errors"] as? [String: Any] ?? [:] { e[k] = v }
                         for (k, v) in MoreFeeds.shared.snapshot["errors"] as? [String: Any] ?? [:] { e[k] = v }
+                        if let s = Stocks.shared.lastError { e["stocks"] = s }
                         return e
                     }(),
                     "theme": effectiveTheme,
@@ -453,6 +498,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     "lastAction": lastActionMessage,
                     "apkBundled": Bundle.main.url(forResource: "MatchboxDashboard", withExtension: "apk") != nil || AppPaths.devAPK != nil,
                     "configPath": ConfigStore.shared.fileURL.path,
+                    "claudeBridge": ClaudeBridge.status,
                 ])
             }
 
@@ -461,7 +507,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 let j = (try? JSONSerialization.jsonObject(with: r.body)) as? [String: Any] ?? [:]
                 switch j["action"] as? String ?? "" {
                 case "speedtest": MetricsCollector.shared.runSpeedTest()
-                case "refresh": FeedService.shared.refreshAll(); MediaFeeds.shared.refreshAll(); ExtraFeeds.shared.refreshAll(); MoreFeeds.shared.refreshAll()
+                case "refresh": FeedService.shared.refreshAll(); MediaFeeds.shared.refreshAll(); ExtraFeeds.shared.refreshAll(); MoreFeeds.shared.refreshAll(); Stocks.shared.refresh()
                 case "wallpaper": WallpaperSampler.shared.refreshNow()
                 case "presence":
                     // Test hook: pretend the Mac is asleep / logged out for a while.

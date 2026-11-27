@@ -376,10 +376,21 @@
   }
 
   // ---------- Claude Code ----------
+  function limitBars(lim, bridge) {
+    function one(name, L) {
+      if (!L) return "";
+      return '<div class="cl-lim"><div class="kvr"><b>' + name + '</b><span>' + Math.round(L.used) + "% used · resets in " + C.until(L.reset) + "</span></div>" +
+        '<div class="bar2" style="height:8px;border-radius:4px;background:var(--track);overflow:hidden"><i style="display:block;height:100%;background:' +
+        (L.used >= 85 ? "var(--live)" : "var(--claude)") + ";width:" + Math.min(100, L.used).toFixed(1) + '%"></i></div></div>';
+    }
+    if (!lim.five && !lim.week) return bridge ? "" : '<div class="note2">Plan limits: connect Claude Code in the manager (Display › Claude Code usage).</div>';
+    return one("5-hour limit", lim.five) + one("Weekly limit", lim.week);
+  }
+
   function renderClaude() {
     var d = detail, x = d.ctx, tok = C.tok, until = C.until;
     if (!d.today && !d.error) return '<div class="col"><div class="note2">Reading Claude Code usage…</div></div><div class="col"></div>';
-    if (!d.any) return '<div class="col"><div class="big" style="font-size:44px">No activity yet</div><div class="note2">Usage appears here once you use Claude Code on this Mac (the app’s Code tab or the claude command). Chats in the Claude app aren’t stored on the Mac.</div></div><div class="col"></div>';
+    if (!d.any) return '<div class="col"><div class="big" style="font-size:44px">No activity yet</div><div class="note2">Usage appears here once you use Claude Code on this Mac (the app’s Code tab or the claude command). Chats in the Claude app aren’t stored on the Mac.</div></div><div class="col">' + limitBars(d.limits || {}, true) + "</div>";
     $("sheet-sub").textContent = x ? x.model + " · " + tok(x.window) + " context" : "";
     var t = d.today || {}, w = d.week || {}, b = d.block;
     var top = Math.max.apply(null, (d.days || []).map(function (v) { return v.tokens; }).concat([1]));
@@ -400,9 +411,10 @@
       (x ? '<div class="panel-title">Context left · ' + esc(x.session || x.folder || "Latest session") + '</div><div class="big">' + Math.round(x.left) + '<span class="unit">%</span></div>' +
         '<div class="bar2" style="height:10px;border-radius:5px;background:var(--track);overflow:hidden"><i style="display:block;height:100%;background:var(--claude);width:' + (100 - x.left).toFixed(1) + '%"></i></div>' +
         '<div class="note2">' + tok(x.used) + " of " + tok(x.window) + " tokens used · last reply " + C.ago(x.at) + "</div>" : "") +
+      limitBars(d.limits || {}, d.bridge) +
       "<div>" +
         kv("Weekly reset", resetWhen ? "in " + until(d.reset) + " · " + C.fmt(resetWhen, { weekday: "short", hour: "numeric", minute: "2-digit", hour12: !(C.cfg() || {}).clock24h }) : "Not set") +
-        kv("5-hour window (est.)", b ? "ends in " + until(b.end) : "No recent use") +
+        ((d.limits || {}).five ? "" : kv("5-hour window (est.)", b ? "ends in " + until(b.end) : "No recent use")) +
         kv("Tokens this window", b ? tok(b.tokens) : "–") +
       "</div>" +
       '<div class="panel"><div class="panel-title">Last 7 days</div><div class="cl-days">' + days + "</div></div></div>" +

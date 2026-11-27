@@ -30,10 +30,11 @@ final class ConfigStore {
       ],
       "location": { "name": "San Francisco", "lat": 37.7749, "lon": -122.4194 },
       "cards": { "weather": true, "sports": true, "news": true, "youtube": true, "anime": true, "bluesky": true, "steamUpcoming": true, "steamDeals": true,
-                 "steamAchievements": true, "steamClosest": true, "steamNews": true, "fx": true, "kanji": true, "radar": true, "slickdeals": true },
+                 "steamAchievements": true, "steamClosest": true, "steamNews": true, "fx": true, "kanji": true, "radar": true, "slickdeals": true, "stocks": true },
       "exchange": { "pairs": [ { "from": "USD", "to": "JPY" } ] },
       "kanji": { "level": "jlpt-4" },
       "radar": { "useWeatherLocation": true, "name": "", "lat": 0, "lon": 0, "zoom": 6 },
+      "stocks": { "symbols": [] },
       "slickdeals": { "frontpage": true, "popular": false, "searches": [] },
       "bluesky": { "accounts": [], "includeReposts": false },
       "steam": { "profile": "", "minDiscount": 10, "apiKey": "" },
@@ -56,7 +57,7 @@ final class ConfigStore {
       "speedTest": { "enabled": true, "intervalMinutes": 60 },
       "brightness": { "day": -1, "night": 0.2 },
       "screen": { "mode": "always", "timeoutMinutes": 10 },
-      "claude": { "enabled": false, "resetDay": -1, "resetTime": "09:00" },
+      "claude": { "enabled": false, "tile": "context", "resetDay": -1, "resetTime": "09:00" },
       "adb": { "autoReverse": true, "autoLaunch": true, "anyDevice": false, "allowed": [], "path": "" }
     }
     """

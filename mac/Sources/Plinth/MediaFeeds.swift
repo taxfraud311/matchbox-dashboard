@@ -252,6 +252,20 @@ final class MediaFeeds {
                                      "cdn.fastly.steamstatic.com", "clan.akamai.steamstatic.com", "clan.fastly.steamstatic.com",
                                      "tilecache.rainviewer.com", "static.slickdealscdn.com", "tile.openstreetmap.org"]
 
+    /// Same as image(_:), without holding a thread while it downloads.
+    func imageAsync(_ s: String, _ done: @escaping ((Data, String)?) -> Void) {
+        guard let url = URL(string: s), url.scheme == "https", let host = url.host, Self.imageHosts.contains(host) else { return done(nil) }
+        let type = url.pathExtension.lowercased() == "png" ? "image/png" : "image/jpeg"
+        if let d = imageCache.object(forKey: s as NSString) { return done((d as Data, type)) }
+        var req = URLRequest(url: url)
+        if host == "tile.openstreetmap.org" { req.setValue("MatchboxDashboard/1.0 (personal home info display; macOS)", forHTTPHeaderField: "User-Agent") }
+        session.dataTask(with: req) { [weak self] d, r, e in
+            guard e == nil, ((r as? HTTPURLResponse)?.statusCode ?? 0) < 400, let d, d.count < 2_000_000 else { return done(nil) }
+            self?.imageCache.setObject(d as NSData, forKey: s as NSString, cost: d.count)
+            done((d, type))
+        }.resume()
+    }
+
     func image(_ s: String) -> (Data, String)? {
         guard let url = URL(string: s), url.scheme == "https", let host = url.host, Self.imageHosts.contains(host) else { return nil }
         if let d = imageCache.object(forKey: s as NSString) { return (d as Data, url.pathExtension.lowercased() == "png" ? "image/png" : "image/jpeg") }

@@ -52,7 +52,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleExecutable</key><string>$NAME</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.3.0</string>
+  <key>CFBundleShortVersionString</key><string>1.4.0</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>PlinthTabletVersion</key><string>$TABLET_VERSION</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>

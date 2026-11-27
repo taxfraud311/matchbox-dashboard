@@ -534,6 +534,24 @@ body.day .ctl-int button.on { color: #fff; }
 body.night .sk .sp { background: transparent; color: #4cd964; box-shadow: inset 0 0 0 2px #4cd964; }
 
 /* ===================== Exchange rate ===================== */
+/* Stocks */
+body.day { --stk-up: #1a8f43; --stk-down: #d93a3f; }
+body.night { --stk-up: #4cd964; --stk-down: #ff6b6b; }
+.stocks { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.stk { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) auto; align-items: center; gap: 16px; padding: 9px 0;
+       border-bottom: 1px solid var(--line, rgba(127,127,127,.18)); flex: 1; min-height: 0; max-height: 98px; }
+.stk:last-of-type { border-bottom: 0; }
+.stk-id { min-width: 0; }
+.stk-id b { display: block; font-family: var(--font-round); font-size: 30px; font-weight: 750; letter-spacing: -0.01em; line-height: 1.05; }
+.stk-id span { display: block; font-size: 16px; font-weight: 650; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+.stk-spark { width: 100%; height: 46px; display: block; color: var(--text-2); }
+.stk-px { text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.stk-px b { font-family: var(--font-round); font-size: 30px; font-weight: 700; letter-spacing: -0.01em; line-height: 1; font-variant-numeric: tabular-nums; }
+.stk-ch { font-size: 16px; font-weight: 750; padding: 3px 9px; border-radius: 999px; background: rgba(127,127,127,.18); color: var(--text-2); font-variant-numeric: tabular-nums; }
+.stk-ch.up { background: var(--stk-up); color: #fff; } .stk-ch.down { background: var(--stk-down); color: #fff; }
+.stk-foot { font-size: 15px; font-weight: 650; color: var(--text-3); margin-top: auto; padding-top: 6px; display: flex; align-items: center; gap: 6px; }
+.stk-foot .live-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--live); animation: stkpulse 2s ease-in-out infinite; }
+@keyframes stkpulse { 50% { opacity: .35; } }
 .fx { display: flex; flex-direction: column; flex: 1; padding-top: 4px; min-height: 0; }
 .fx-top { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
 .fx-rate small { display: block; font-size: 19px; font-weight: 700; color: var(--text-3); }
@@ -682,6 +700,10 @@ body.compact.claude #t-net .spark { height: 22px; }
 body.compact #t-claude .value { font-size: 34px; margin-top: 2px; }
 body.compact #t-claude .sub { grid-column: 1 / -1; font-size: 13px; text-align: left; padding-bottom: 0; margin-top: 1px; align-self: start; }
 body.compact #t-claude .bar { grid-column: 1 / -1; height: 6px; margin-top: 5px; }
+.cl-lim { margin: 2px 0 10px; }
+.cl-lim .kvr { display: flex; justify-content: space-between; align-items: baseline; font-size: 17px; margin-bottom: 5px; }
+.cl-lim .kvr b { font-weight: 700; }
+.cl-lim .kvr span { color: var(--text-2); font-weight: 600; font-size: 15px; }
 .cl-days { display: flex; align-items: flex-end; gap: 8px; height: 92px; }
 .cl-days div { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; justify-content: flex-end; }
 .cl-days i { display: block; width: 100%; border-radius: 6px 6px 3px 3px; background: var(--claude); min-height: 3px; }

@@ -194,6 +194,10 @@ final class ADBBridge {
     /// Tablets whose screen this Mac switched off. Only these are woken again, and the watchdog leaves them alone.
     private var screenOff = Set<String>()
 
+    private func panelOff(_ serial: String) -> Bool {
+        adb(["-s", serial, "shell", "dumpsys", "power"]).stdout.contains("Display Power: state=OFF")
+    }
+
     private func displayInFront(_ serial: String) -> Bool {
         adb(["-s", serial, "shell", "dumpsys", "activity", "activities"]).stdout
             .split(separator: "\n").contains { $0.contains("ResumedActivity") && $0.contains(ADBBridge.package) }
@@ -201,12 +205,15 @@ final class ADBBridge {
 
     /// Off: the tablet released its keep-awake and asked; over USB the screen goes dark right away instead of
     /// waiting for the tablet's own timeout. On: wakes tablets this Mac turned off (the screen saver ended).
-    func setScreen(on: Bool, fromTablet: Bool = false) {
+    /// `force`: also wake a tablet this Mac didn't switch off, if its screen is off with the display in front
+    /// (switching to Always On, e.g. after this app restarted while the tablet was asleep).
+    func setScreen(on: Bool, fromTablet: Bool = false, force: Bool = false) {
         queue.async { [weak self] in
             guard let self, self.adbPath != nil else { return }
             for d in self.targets() {
                 if on {
-                    guard self.screenOff.remove(d.serial) != nil, !fromTablet else { continue }
+                    let ours = self.screenOff.remove(d.serial) != nil
+                    guard !fromTablet, ours || (force && self.panelOff(d.serial) && self.displayInFront(d.serial)) else { continue }
                     self.adb(["-s", d.serial, "shell", "input", "keyevent", "KEYCODE_WAKEUP"])
                     // Waking brings up the tablet's lock screen; dismiss it (works when there's no PIN or password).
                     self.adb(["-s", d.serial, "shell", "wm", "dismiss-keyguard"])

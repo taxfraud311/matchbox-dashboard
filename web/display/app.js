@@ -23,6 +23,7 @@
   };
   ICONS.chipTrophy = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3.5h10v5.5a5 5 0 0 1-10 0z"/><path d="M12 14v3.5M8.5 20.5h7M9.5 17.5h5"/><path d="M12 6.3l.8 1.6 1.7.2-1.3 1.2.4 1.7-1.6-.9-1.6.9.4-1.7-1.3-1.2 1.7-.2z" fill="#fff" stroke="none"/></svg>';
   ICONS.chipTarget = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="#fff"/></svg>';
+  ICONS.chipStocks = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5.5-5.5 4 4L21 7"/><path d="M15 7h6v6"/></svg>';
   ICONS.chipFX = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13l-3.5-3.5M20 16H7l3.5 3.5"/></svg>';
   ICONS.chipKanji = '<svg viewBox="0 0 24 24"><text x="12" y="18" text-anchor="middle" font-size="16" font-weight="700" fill="#fff" font-family="sans-serif">字</text></svg>';
   ICONS.chipRadar = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8.5" opacity=".55"/><circle cx="12" cy="12" r="4.5" opacity=".75"/><path d="M12 12l6-6"/><circle cx="12" cy="12" r="1.3" fill="#fff"/></svg>';
@@ -262,13 +263,26 @@
     }
     lastClaude = c || null;
     if (!c) return;
-    var x = c.ctx;
-    setText("cl-val", x ? Math.round(x.left) + "" : "–");
-    setText("cl-aside", x ? x.model : "");
-    $("cl-bar").style.width = x ? (100 - x.left).toFixed(1) + "%" : "0%";
-    $("cl-bar").className = "fill" + (x && x.left < 15 ? " hot" : "");
-    var sub = c.loading ? "Reading Claude Code usage…" : !c.any ? "No Claude Code activity yet" :
-      tok(c.today) + " today" + (c.reset ? " · reset " + until(c.reset) : "");
+    var x = c.ctx, mode = c.tile || "context", lim = c.limits || {}, sub;
+    if (mode === "fiveHour" || mode === "weekly") {
+      // Plan limit: % used, from Claude Code's status line (or 100% after a "limit reached").
+      var L = mode === "fiveHour" ? lim.five : lim.week, label = mode === "fiveHour" ? "5-hour" : "Weekly";
+      setText("cl-val", L ? Math.round(L.used) + "" : "–");
+      setText("cl-unit", "% used");
+      setText("cl-aside", label);
+      $("cl-bar").style.width = L ? Math.min(100, L.used).toFixed(1) + "%" : "0%";
+      $("cl-bar").className = "fill" + (L && L.used >= 85 ? " hot" : "");
+      sub = c.loading ? "Reading Claude Code usage…" : L ? "resets in " + until(L.reset)
+          : !c.bridge ? "Connect Claude Code in the manager" : mode === "fiveHour" && c.block ? tok(c.block.tokens) + " this window" : "Waiting for Claude Code";
+    } else {
+      setText("cl-val", x ? Math.round(x.left) + "" : "–");
+      setText("cl-unit", "% left");
+      setText("cl-aside", x ? x.model : "");
+      $("cl-bar").style.width = x ? (100 - x.left).toFixed(1) + "%" : "0%";
+      $("cl-bar").className = "fill" + (x && x.left < 15 ? " hot" : "");
+      sub = c.loading ? "Reading Claude Code usage…" : !c.any ? "No Claude Code activity yet" :
+        tok(c.today) + " today" + (c.reset ? " · reset " + until(c.reset) : "");
+    }
     setText("cl-sub", sub);
   }
 
@@ -283,7 +297,7 @@
   function pollMetrics() {
     clearTimeout(pollTimer);
     var url = "/api/metrics" + (gotHistory ? "" : "?h=1");
-    fetchJSON(url, 3000).then(function (j) {
+    fetchJSON(url, 5000).then(function (j) {
       failures = 0;
       lastOkAt = Date.now();
       document.body.classList.remove("offline");
@@ -518,6 +532,7 @@
     steamClosest: { icon: ICONS.chipTarget, bg: "linear-gradient(160deg,#66c0f4,#2a6f9e)" },
     steamNews: { icon: ICONS.chipNews, bg: "linear-gradient(160deg,#2a475e,#171a21)" },
     fx: { icon: ICONS.chipFX, bg: "linear-gradient(160deg,#34c759,#1f8f3e)" },
+    stocks: { icon: ICONS.chipStocks, bg: "linear-gradient(160deg,#30d158,#0b7a3b)" },
     kanji: { icon: ICONS.chipKanji, bg: "linear-gradient(160deg,#ff5a5f,#c81d3a)" },
     radar: { icon: ICONS.chipRadar, bg: "linear-gradient(160deg,#30b0c7,#0a7b91)" },
     slickdeals: { icon: ICONS.chipSlick, bg: "linear-gradient(160deg,#2f8cff,#1360c9)" },
@@ -602,6 +617,14 @@
     if (cards.slickdeals !== false) paged("sk", feeds.slickdeals, 3, 4, "slickdeals", "Slickdeals", "Latest deals");
     if (cards.fx !== false && feeds.fx && feeds.fx.length) {
       queues.push(feeds.fx.map(function (p, i) { return { key: "fx:" + p.from + p.to, type: "fx", title: "Exchange Rate", sub: p.from + " → " + p.to, pair: p }; }));
+    }
+    if (cards.stocks !== false && feeds.stocks && feeds.stocks.length) {
+      var st = feeds.stocks, open = st.some(function (q) { return q.state === "open"; });
+      var state = open ? "Market open" : st.some(function (q) { return q.state === "pre"; }) ? "Pre-market"
+                : st.some(function (q) { return q.state === "post"; }) ? "After hours" : "Market closed";
+      queues.push(chunk(st, 4).slice(0, 2).map(function (grp, i, all) {
+        return { key: "stk:" + i, type: "stocks", title: "Stocks", sub: state + (all.length > 1 ? "  " + (i + 1) + "/" + all.length : ""), items: grp, live: open };
+      }));
     }
     if (cards.kanji !== false && feeds.kanji && feeds.kanji.kanji) {
       queues.push([{ key: "kj:" + feeds.kanji.kanji, type: "kanji", title: "Kanji of the Hour", sub: levelName(feeds.kanji.level) }]);
@@ -704,6 +727,7 @@
     if (s.type === "steamNews") return renderSteamNews(s.items);
     if (s.type === "slickdeals") return renderSlick(s.items);
     if (s.type === "fx") return renderFX(s.pair);
+    if (s.type === "stocks") return renderStocks(s);
     if (s.type === "kanji") return renderKanji(feeds.kanji);
     if (s.type === "radar") return '<div class="radar" data-href="' + esc(feeds.radar.url) + '" data-qt="Rain radar · ' + esc(feeds.radar.name || "") + '"><div class="rmap"></div><div class="rtime"></div><div class="rcred">RainViewer · © OpenStreetMap contributors</div></div>';
     return "";
@@ -945,6 +969,37 @@
               '<div class="sb"><b>' + esc(d.title) + "</b><span>" + meta + "</span></div>" + (d.price ? '<div class="sp">' + esc(d.price) + "</div>" : "") + "</div>";
     });
     return html + "</div>";
+  }
+
+  // ---------- Stocks ----------
+  function stockPrice(v, cur) {
+    var digits = v >= 1000 ? 2 : v >= 1 ? 2 : 4;
+    var n = v.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+    var sym = { USD: "$", EUR: "€", GBP: "£", JPY: "¥", CAD: "$", AUD: "$", HKD: "$" }[cur];
+    return sym ? sym + n : n + (cur ? " " + cur : "");
+  }
+  function stockSpark(pts, prev, up) {
+    if (!pts || pts.length < 2) return "";
+    var W = 160, H = 44, lo = Math.min.apply(null, pts.concat([prev])), hi = Math.max.apply(null, pts.concat([prev])), pad = (hi - lo) * 0.08 || hi * 0.002 || 1;
+    lo -= pad; hi += pad;
+    function y(v) { return (H - (v - lo) / (hi - lo) * H).toFixed(1); }
+    var p = pts.map(function (v, i) { return (i / (pts.length - 1) * W).toFixed(1) + "," + y(v); });
+    var col = up ? "var(--stk-up)" : "var(--stk-down)";
+    return '<svg class="stk-spark" viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="none">' +
+      '<line x1="0" x2="' + W + '" y1="' + y(prev) + '" y2="' + y(prev) + '" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 4" opacity=".35" vector-effect="non-scaling-stroke"/>' +
+      '<polyline points="' + p.join(" ") + '" fill="none" stroke="' + col + '" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>';
+  }
+  function renderStocks(s) {
+    var rows = s.items.map(function (q) {
+      var up = q.change >= 0, flat = Math.abs(q.pct) < 0.005;
+      return '<div class="stk"' + qa(q.url, q.symbol + (q.name ? " · " + q.name : "")) + '><div class="stk-id"><b>' + esc(q.symbol.replace(/^\^/, "")) + "</b><span>" + esc(q.name || "") + "</span></div>" +
+        stockSpark(q.points, q.prev, up) +
+        '<div class="stk-px"><b>' + stockPrice(q.price, q.currency) + '</b><span class="stk-ch ' + (flat ? "" : up ? "up" : "down") + '">' +
+        (flat ? "" : up ? "▲ " : "▼ ") + Math.abs(q.pct).toFixed(2) + "%</span></div></div>";
+    }).join("");
+    var t = s.items.reduce(function (m, q) { return Math.max(m, q.time || 0); }, 0);
+    return '<div class="stocks">' + rows + '<div class="stk-foot">' + (s.live ? '<span class="live-dot"></span>Live · ' : "") +
+      (t ? "Updated " + fmt(new Date(t), { hour: "numeric", minute: "2-digit", hour12: !cfg.clock24h }) : "") + " · Yahoo Finance</div></div>";
   }
 
   // ---------- Exchange rates ----------
@@ -1210,13 +1265,16 @@
   try { var sv = JSON.parse(localStorage.getItem("plinth.screen") || "null"); if (sv) { screenMode = sv.mode; screenTimeout = sv.timeout; } } catch (e) {}
   function screenFromMac(sc) {
     if (sc.mode !== screenMode || sc.timeout !== screenTimeout) {
+      lastTouch = Date.now();   // a new setting starts its countdown now
       try { localStorage.setItem("plinth.screen", JSON.stringify({ mode: sc.mode, timeout: sc.timeout })); } catch (e) {}
     }
     screenMode = sc.mode || "always"; screenTimeout = sc.timeout || 600;
     if (screenMode === "always") { lastSaver = null; if (!screenOn) setScreen(true); return; }
     if (screenMode === "screensaver") {
-      // Act on changes only, so waking the tablet by hand while the screen saver runs keeps it on.
-      if (sc.saver !== lastSaver) { lastSaver = sc.saver; if (lastSaver !== null) setScreen(!sc.saver); }
+      // The Mac is idle: screen saver, displays asleep, or about to sleep / log out.
+      var idle = !!sc.saver || presence === "sleeping" || presence === "loggedOut";
+      // Act on changes only, so waking the tablet by hand while the Mac is idle keeps it on.
+      if (idle !== lastSaver) { lastSaver = idle; setScreen(!idle); }
     } else lastSaver = null;
   }
   setInterval(function () {
@@ -1229,6 +1287,18 @@
   document.addEventListener("visibilitychange", function () { if (!document.hidden) wake(); });
   window.plinthResumed = wake;
   $("screen-off").addEventListener("pointerdown", function (e) { e.stopPropagation(); e.preventDefault(); wake(); });
+
+  // ---------- Long-running hygiene ----------
+  // A WebView left open for days slowly gathers memory. Every 12 hours, while nothing is open and the Mac is
+  // reachable, reload the page (the offline cache bridges the second it takes).
+  var bootAt = Date.now();
+  setInterval(function () {
+    if (Date.now() - bootAt < 12 * 3600000 || standby || !screenOn || document.querySelector(".sheet-wrap.shown")) return;
+    if (Date.now() - lastOkAt > 5000) return;
+    saveCache(true);
+    if (host && host.reload) { try { host.reload(); return; } catch (e) {} }
+    location.reload();
+  }, 60000);
 
   // ---------- Update available ----------
   // A newer Mac app on GitHub, or (after the Mac updated) a newer tablet app than this one. Dismissed per version.

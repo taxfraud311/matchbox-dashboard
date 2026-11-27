@@ -29,21 +29,47 @@ struct HTTPResponse {
 }
 
 /// A deliberately small HTTP/1.1 server: one request per connection, Connection: close.
+///
+/// Connections are read and written on a serial queue that never blocks, and requests are answered on a separate
+/// worker queue, so slow requests (thumbnails, detail sheets) can't hold up the tablet's once-a-second metrics poll.
+/// The listener restarts itself if the network stack fails it (Wi-Fi changes, sleep/wake).
 final class HTTPServer {
     typealias Handler = (HTTPRequest) -> HTTPResponse
+    /// Answers a request later without holding a thread (returns false to leave it to the normal handler).
+    typealias AsyncHandler = (HTTPRequest, @escaping (HTTPResponse) -> Void) -> Bool
 
     private var listener: NWListener?
-    private let queue = DispatchQueue(label: "plinth.http", attributes: .concurrent)
+    private let queue = DispatchQueue(label: "plinth.http.io", qos: .userInitiated)
+    private let work = DispatchQueue(label: "plinth.http.work", qos: .userInitiated, attributes: .concurrent)
+    /// The metrics poll gets a lane of its own.
+    private let fast = DispatchQueue(label: "plinth.http.fast", qos: .userInteractive)
     private let handler: Handler
+    var asyncHandler: AsyncHandler?
     private(set) var port: UInt16 = 0
     private(set) var lastError: String?
     var onStateChange: (() -> Void)?
+    private var config: (UInt16, Bool, String)?
+    private var restartPending = false
+    private(set) var restarts = 0
 
     init(handler: @escaping Handler) { self.handler = handler }
+
+    /// Starts again with the same settings (after a failure, or when the Mac wakes).
+    func restart(after delay: TimeInterval = 0) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, let c = self.config else { return }
+            self.restartPending = false
+            self.restarts += 1
+            self.start(port: c.0, localOnly: c.1, bonjourName: c.2)
+        }
+    }
+
+    var isReady: Bool { if case .ready = listener?.state { return true }; return false }
 
     func start(port: UInt16, localOnly: Bool, bonjourName: String) {
         stop()
         self.port = port
+        config = (port, localOnly, bonjourName)
         do {
             let params = NWParameters.tcp
             params.allowLocalEndpointReuse = true
@@ -55,10 +81,17 @@ final class HTTPServer {
                 l.service = NWListener.Service(name: bonjourName, type: "_plinth._tcp")
             }
             l.newConnectionHandler = { [weak self] c in self?.handle(c) }
-            l.stateUpdateHandler = { [weak self] st in
+            l.stateUpdateHandler = { [weak self, weak l] st in
+                guard let self, let l, l === self.listener else { return }
                 switch st {
-                case .failed(let e): self?.lastError = "\(e)"; self?.onStateChange?()
-                case .ready: self?.lastError = nil; self?.onStateChange?()
+                case .failed(let e):
+                    self.lastError = "\(e)"; self.onStateChange?()
+                    DispatchQueue.main.async { if !self.restartPending { self.restartPending = true; self.restart(after: 2) } }
+                case .waiting(let e):
+                    // Usually the port is briefly unavailable after a network change; try again shortly.
+                    self.lastError = "\(e)"; self.onStateChange?()
+                    DispatchQueue.main.async { if !self.restartPending { self.restartPending = true; self.restart(after: 5) } }
+                case .ready: self.lastError = nil; self.onStateChange?()
                 default: break
                 }
             }
@@ -74,6 +107,9 @@ final class HTTPServer {
 
     private func handle(_ conn: NWConnection) {
         conn.start(queue: queue)
+        // A client that connects and never finishes its request (or a dropped Wi-Fi link) is cut off after 20 s,
+        // so stale connections can't pile up over days.
+        queue.asyncAfter(deadline: .now() + 20) { if conn.state != .cancelled { conn.cancel() } }
         var buffer = Data()
         func receive() {
             conn.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, done, err in
@@ -81,8 +117,10 @@ final class HTTPServer {
                 if let data { buffer.append(data) }
                 if buffer.count > 2_000_000 { conn.cancel(); return }
                 if let req = HTTPServer.parse(buffer, endpoint: conn.endpoint) {
-                    let resp = self.handler(req)
-                    self.send(resp, on: conn, head: req.method == "HEAD")
+                    let head = req.method == "HEAD"
+                    let reply: (HTTPResponse) -> Void = { resp in self.queue.async { self.send(resp, on: conn, head: head) } }
+                    if let a = self.asyncHandler, a(req, reply) { return }
+                    (req.path == "/api/metrics" ? self.fast : self.work).async { reply(self.handler(req)) }
                 } else if done || err != nil {
                     conn.cancel()
                 } else {

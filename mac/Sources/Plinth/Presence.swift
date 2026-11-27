@@ -1,5 +1,6 @@
 import AppKit
 import IOKit.pwr_mgt
+import Darwin
 
 /// Tells the tablet whether the Mac is awake, about to sleep, or logged out, so it can switch to its
 /// full-screen standby layout *before* the Mac disappears.
@@ -13,25 +14,47 @@ final class Presence {
     /// The screen lock is tracked on its own, because it outlasts sleep: lock → sleep → wake is still locked.
     private var _locked = false
     private var override: (State, Date)?
+    private var stateSince = Date()
     var state: State {
         lock.lock(); defer { lock.unlock() }
         if let (s, until) = override, Date() < until { return s }
         if _state == .awake && _locked { return .locked }
         return _state
     }
-    func set(_ s: State) { lock.lock(); _state = s; lock.unlock() }
-
-    /// The screen saver on its own (not the lock screen), for the tablet's "turn off with the screen saver" option.
-    private var _saver = false
-    private var engineSeen = false
-    var screenSaverRunning: Bool { lock.lock(); defer { lock.unlock() }; return _saver }
-    var onScreenSaverChange: ((Bool) -> Void)?
-    private func setSaver(_ on: Bool) {
-        lock.lock(); let changed = _saver != on; _saver = on; lock.unlock()
-        if changed { onScreenSaverChange?(on) }
+    func set(_ s: State) {
+        lock.lock(); if _state != s { stateSince = Date() }; _state = s; lock.unlock()
+        if s == .sleeping { setIdle(sleeping: true) } else if s == .awake { setIdle(sleeping: false) }
     }
+
+    /// "The Mac is idle" for the tablet's screen-saver option: the screen saver is running, the displays are asleep,
+    /// or the Mac is going to sleep. The lock screen on its own doesn't count.
+    private var _saver = false, _displaysAsleep = false, _sleeping = false
+    private var engineSeen = false
+    private var lastIdle = false
+    var screenSaverRunning: Bool { lock.lock(); defer { lock.unlock() }; return _saver }
+    var macIdle: Bool { lock.lock(); defer { lock.unlock() }; return _saver || _displaysAsleep || _sleeping }
+    var onIdleChange: ((Bool) -> Void)?
+    private func setIdle(saver: Bool? = nil, displays: Bool? = nil, sleeping: Bool? = nil) {
+        lock.lock()
+        if let saver { _saver = saver }; if let displays { _displaysAsleep = displays }; if let sleeping { _sleeping = sleeping }
+        let now = _saver || _displaysAsleep || _sleeping, changed = now != lastIdle
+        lastIdle = now
+        lock.unlock()
+        if changed { onIdleChange?(now) }
+    }
+    private func setSaver(_ on: Bool) { setIdle(saver: on) }
+
+    /// Looks for the screen saver process directly. NSWorkspace doesn't list it on every macOS version.
     static func screenSaverEngineRunning() -> Bool {
-        NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == "com.apple.ScreenSaver.Engine" || $0.localizedName == "ScreenSaverEngine" }
+        let n = proc_listallpids(nil, 0)
+        guard n > 0 else { return false }
+        var pids = [pid_t](repeating: 0, count: Int(n) + 32)
+        let got = Int(proc_listallpids(&pids, Int32(pids.count * MemoryLayout<pid_t>.size)))
+        var name = [CChar](repeating: 0, count: 256)
+        for pid in pids.prefix(max(0, got)) where pid > 0 {
+            if proc_name(pid, &name, UInt32(name.count)) > 0, String(cString: name) == "ScreenSaverEngine" { return true }
+        }
+        return false
     }
     func setLocked(_ l: Bool) { lock.lock(); _locked = l; lock.unlock() }
 
@@ -66,6 +89,7 @@ final class Presence {
         dnc.addObserver(forName: .init("com.apple.screensaver.didstart"), object: nil, queue: .main) { [weak self] _ in self?.setSaver(true) }
         dnc.addObserver(forName: .init("com.apple.screensaver.didstop"), object: nil, queue: .main) { [weak self] _ in self?.engineSeen = false; self?.setSaver(false) }
         setSaver(Self.screenSaverEngineRunning())
+        let nc = NSWorkspace.shared.notificationCenter
         // Backstop in case a notification is missed.
         lockTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
             guard let self else { return }
@@ -74,8 +98,10 @@ final class Presence {
             // after it has seen the engine running, so a missed lookup can't cancel the didstart notification.
             if Self.screenSaverEngineRunning() { self.engineSeen = true; self.setSaver(true) }
             else if self.engineSeen { self.engineSeen = false; self.setSaver(false) }
+            self.unstick()
         }
-        let nc = NSWorkspace.shared.notificationCenter
+        nc.addObserver(forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main) { [weak self] _ in self?.setIdle(displays: true) }
+        nc.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) { [weak self] _ in self?.setIdle(displays: false) }
         nc.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in self?.set(.sleeping) }
         nc.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             self?.set(.awake); self?.setLocked(Self.screenIsLocked())
@@ -86,6 +112,25 @@ final class Presence {
         // Fast user switching: this session goes to the background but Plinth keeps running.
         nc.addObserver(forName: NSWorkspace.sessionDidResignActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.set(.loggedOut) }
         nc.addObserver(forName: NSWorkspace.sessionDidBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.set(.awake) }
+    }
+
+    /// If this process is still running well after announcing sleep or logout, that didn't happen (a cancelled
+    /// logout, an app that blocked the restart, a wake whose notification never arrived). Without this the tablet
+    /// could say "Mac is asleep" or "logged out" for good.
+    private func unstick() {
+        lock.lock()
+        let s = _state, age = Date().timeIntervalSince(stateSince)
+        lock.unlock()
+        if (s == .sleeping && age > 90) || (s == .loggedOut && age > 120 && !Self.sessionInBackground()) || (s == .quitting && age > 30) {
+            NSLog("Presence: still running \(Int(age)) s after \(s.rawValue); back to awake")
+            set(.awake); setLocked(Self.screenIsLocked())
+        }
+    }
+
+    /// Fast user switching: another user has the screen.
+    static func sessionInBackground() -> Bool {
+        guard let d = CGSessionCopyCurrentDictionary() as? [String: Any] else { return false }
+        return (d["kCGSSessionOnConsoleKey"] as? NSNumber)?.boolValue == false
     }
 }
 
@@ -104,7 +149,8 @@ private func powerCallback(refcon: UnsafeMutableRawPointer?, service: io_service
         IOAllowPowerChange(me.rootPort, arg)
     case msgSystemWillSleep:
         me.set(.sleeping)
-        DispatchQueue.main.asyncAfter(deadline: .now() + Presence.announceDelay) { IOAllowPowerChange(me.rootPort, arg) }
+        // Off the main thread, so a busy main thread can't hold up (or lose) the go-ahead to sleep.
+        DispatchQueue.global(qos: .userInteractive).asyncAfter(deadline: .now() + Presence.announceDelay) { IOAllowPowerChange(me.rootPort, arg) }
     case msgSystemWillPowerOn, msgSystemHasPoweredOn:
         me.set(.awake)
     default:

@@ -12,6 +12,7 @@
     network: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4v15M4 15l4 4 4-4M16 20V5M12 9l4-4 4 4"/></svg>',
     bluesky: '<svg viewBox="0 0 24 24"><path fill="#fff" d="M6.3 4.6c2.1 1.6 4.4 4.8 5.7 6.5 1.3-1.7 3.6-4.9 5.7-6.5 1.5-1.1 4-2 4 .8 0 .6-.3 4.7-.5 5.4-.7 2.4-3.2 3-5.4 2.6 3.9.7 4.9 2.9 2.7 5.1-4.1 4.2-5.9-1.1-6.4-2.4l-.1-.4-.1.4c-.5 1.3-2.3 6.6-6.4 2.4-2.2-2.2-1.2-4.4 2.7-5.1-2.2.4-4.7-.2-5.4-2.6C2.6 10.1 2.3 6 2.3 5.4c0-2.8 2.5-1.9 4-.8z"/></svg>',
     steam: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><rect x="2.5" y="7" width="19" height="11" rx="5.5"/><path d="M7.5 10.5v4M5.5 12.5h4"/></svg>',
+    stocks: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5.5-5.5 4 4L21 7"/><path d="M15 7h6v6"/></svg>',
     exchange: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13l-3.5-3.5M20 16H7l3.5 3.5"/></svg>',
     kanji: '<svg viewBox="0 0 24 24"><text x="12" y="17.5" text-anchor="middle" font-size="15" font-weight="700" fill="#fff" font-family="sans-serif">字</text></svg>',
     radar: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8.5" opacity=".6"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12l6-6"/></svg>',
@@ -124,7 +125,7 @@
     });
     syncDeps();
     renderLeagues(); renderFeeds(); syncDayOptions(); renderChannels(); renderShows(); renderClocks(); renderBsky(); renderSteam();
-    renderFX(); renderSlick(); renderRadar(); keyStatus(); $("#kj-level").value = get("kanji.level") || "jlpt-4";
+    renderFX(); renderStocks(); renderSlick(); renderRadar(); keyStatus(); $("#kj-level").value = get("kanji.level") || "jlpt-4";
     $("#favorites").value = (get("sports.favorites") || []).join(", ");
     $("#loc-current").textContent = locLabel();
   }
@@ -284,6 +285,45 @@
     var row = e.target.closest(".media-row"); if (!row || !e.target.classList.contains("x")) return;
     var list = (get("exchange.pairs") || []).slice(); list.splice(+row.getAttribute("data-i"), 1);
     save("exchange.pairs", list, true); renderFX();
+  });
+
+  // ---------- Stocks ----------
+  function renderStocks() {
+    var list = get("stocks.symbols") || [], box = $("#stk-list");
+    box.innerHTML = list.length ? list.map(function (s, i) {
+      return '<div class="row media-row" data-i="' + i + '"><div class="lbl"><b>' + esc(s.symbol) + '</b> <span style="color:var(--text-2)">' + esc(s.name || "") + "</span></div>" +
+        (i > 0 ? '<button class="btn small ghost up" title="Move up">↑</button>' : "") + '<button class="x" title="Remove">×</button></div>';
+    }).join("") : '<div class="row"><div class="lbl" style="color:var(--text-2)">No symbols yet. Search above to add some.</div></div>';
+  }
+  function stockSearch() {
+    var q = $("#stk-q").value.trim(), box = $("#stk-results"); if (!q) return;
+    box.innerHTML = '<div class="row"><div class="lbl" style="color:var(--text-2)">Searching…</div></div>';
+    fetch("/api/stocks/search?q=" + encodeURIComponent(q)).then(function (r) { return r.json(); }).then(function (j) {
+      var res = j.results || [];
+      box.innerHTML = res.length ? res.map(function (r) {
+        return '<div class="row media-row" data-sym="' + esc(r.symbol) + '" data-name="' + esc(r.name) + '"><div class="lbl"><b>' + esc(r.symbol) + "</b> " + esc(r.name) +
+          '<div class="hint">' + esc([r.type, r.exchange].filter(Boolean).join(" · ")) + '</div></div><button class="btn small add">Add</button></div>';
+      }).join("") : '<div class="row"><div class="lbl" style="color:var(--text-2)">' + esc(j.error || "Nothing found") + "</div></div>";
+    }).catch(function () { box.innerHTML = '<div class="row"><div class="lbl" style="color:var(--text-2)">Search failed</div></div>'; });
+  }
+  $("#stk-search").addEventListener("click", stockSearch);
+  $("#stk-q").addEventListener("keydown", function (e) { if (e.key === "Enter") stockSearch(); });
+  $("#stk-results").addEventListener("click", function (e) {
+    var row = e.target.closest(".media-row"); if (!row || !e.target.classList.contains("add")) return;
+    var list = (get("stocks.symbols") || []).slice(), sym = row.getAttribute("data-sym");
+    if (list.some(function (s) { return s.symbol === sym; })) { toast(sym + " is already added"); return; }
+    if (list.length >= 8) { toast("Up to 8 symbols. Remove one first"); return; }
+    list.push({ symbol: sym, name: row.getAttribute("data-name") }); save("stocks.symbols", list, true); renderStocks();
+    $("#stk-results").innerHTML = ""; $("#stk-q").value = "";
+    toast("Added " + sym);
+  });
+  $("#stk-list").addEventListener("click", function (e) {
+    var row = e.target.closest(".media-row"); if (!row) return;
+    var i = +row.getAttribute("data-i"), list = (get("stocks.symbols") || []).slice();
+    if (e.target.classList.contains("x")) list.splice(i, 1);
+    else if (e.target.classList.contains("up") && i > 0) { var t = list[i - 1]; list[i - 1] = list[i]; list[i] = t; }
+    else return;
+    save("stocks.symbols", list, true); renderStocks();
   });
 
   // ---------- Kanji ----------
@@ -781,12 +821,13 @@
         var ips = (s.addresses || []).map(function (a) { return "http://" + a.ip + ":" + s.port; });
         $("#wifi-url").textContent = s.localOnly ? "Disabled (USB only)" : (ips[0] || "No network");
         $("#adb-found").textContent = s.adb && s.adb.adbPath ? "Using " + s.adb.adbPath : "Not found";
+        renderBridge(s.claudeBridge || {});
         $("#config-path").textContent = "Settings file: " + s.configPath + "  ·  Matchbox Dashboard " + s.version;
         $("#apk-link").style.display = s.apkBundled ? "" : "none";
         $$("[data-action=install]").forEach(function (b) { b.disabled = !s.apkBundled || !ready.length; });
         var msg = $("#action-msg");
         if (s.lastAction) { msg.hidden = false; msg.textContent = s.lastAction; } else msg.hidden = true;
-        ["weather", "sports", "news", "youtube", "anime", "bluesky", "steam", "steamActivity", "fx", "kanji", "radar", "slickdeals"].forEach(function (k) {
+        ["weather", "sports", "news", "youtube", "anime", "bluesky", "steam", "steamActivity", "fx", "stocks", "kanji", "radar", "slickdeals"].forEach(function (k) {
           var el = $('[data-err="' + k + '"]'), e = s.feedErrors && s.feedErrors[k];
           el.hidden = !e; el.textContent = e ? "⚠︎ " + e : "";
         });
@@ -810,6 +851,24 @@
     save("adb.allowed", list, true);
     b.disabled = true; b.textContent = "Setting up…";
     toast("The display will use this device. Click Install App on Tablet if it isn’t installed yet.");
+  });
+
+  // ---------- Claude Code status line bridge ----------
+  var bridgeOn = false;
+  function renderBridge(b) {
+    bridgeOn = !!b.connected;
+    var btn = $("#cl-bridge"); if (!btn._busy) btn.textContent = bridgeOn ? "Disconnect" : "Connect";
+    var h = $("#cl-bridge-hint");
+    if (bridgeOn) h.textContent = b.lastData ? (b.hasLimits ? "Connected · limits last reported " : "Connected · no plan limits reported yet (they appear for Pro and Max plans after your next reply) · last update ") + ago(b.lastData)
+                                             : "Connected · waiting for Claude Code’s next reply. The status line runs in the claude command in Terminal.";
+    else if (!h._orig) h._orig = h.textContent; else h.textContent = h._orig;
+  }
+  $("#cl-bridge").addEventListener("click", function () {
+    var btn = this; btn._busy = true; btn.disabled = true;
+    fetch("/api/claude/bridge", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: bridgeOn ? "disconnect" : "connect" }) })
+      .then(function (r) { return r.json(); })
+      .then(function (j) { if (j.error) toast(j.error); else { toast(j.connected ? "Connected to Claude Code’s status line" : "Your previous status line is back"); renderBridge(j); } })
+      .then(function () { btn._busy = false; btn.disabled = false; });
   });
 
   // ---------- Updates ----------

@@ -27,6 +27,7 @@
       <a href="#anime"><span class="nico" style="background:#f47521"></span>Anime</a>
       <a href="#bluesky"><span class="nico" style="background:#0a7cff"></span>Bluesky</a>
       <a href="#steam"><span class="nico" style="background:#1b2838"></span>Steam</a>
+      <a href="#stocks"><span class="nico" style="background:#0b7a3b"></span>Stocks</a>
       <a href="#exchange"><span class="nico" style="background:#34c759"></span>Exchange Rates</a>
       <a href="#kanji"><span class="nico" style="background:#c81d3a"></span>Kanji</a>
       <a href="#radar"><span class="nico" style="background:#0a7b91"></span>Radar</a>
@@ -94,6 +95,7 @@
         <div class="row"><div class="lbl">Show recent Steam achievements</div><label class="switch"><input type="checkbox" data-key="cards.steamAchievements"><i></i></label></div>
         <div class="row"><div class="lbl">Show achievements within reach</div><label class="switch"><input type="checkbox" data-key="cards.steamClosest"><i></i></label></div>
         <div class="row"><div class="lbl">Show Steam news for your games</div><label class="switch"><input type="checkbox" data-key="cards.steamNews"><i></i></label></div>
+        <div class="row"><div class="lbl">Show stock ticker</div><label class="switch"><input type="checkbox" data-key="cards.stocks"><i></i></label></div>
         <div class="row"><div class="lbl">Show exchange rates</div><label class="switch"><input type="checkbox" data-key="cards.fx"><i></i></label></div>
         <div class="row"><div class="lbl">Show kanji of the hour</div><label class="switch"><input type="checkbox" data-key="cards.kanji"><i></i></label></div>
         <div class="row"><div class="lbl">Show rain radar</div><label class="switch"><input type="checkbox" data-key="cards.radar"><i></i></label></div>
@@ -128,18 +130,22 @@
       <h2>Screen timeout</h2>
       <div class="group">
         <div class="row"><div class="lbl">Tablet screen<div class="hint">Over USB the Mac switches the screen off right away. Over Wi‑Fi the page goes black and the tablet’s own screen timeout turns it off.</div></div>
-          <div class="seg" data-key="screen.mode"><button data-v="always">Always On</button><button data-v="timeout">After Inactivity</button><button data-v="screensaver">With Screen Saver</button></div></div>
+          <div class="seg" data-key="screen.mode"><button data-v="always">Always On</button><button data-v="timeout">After Inactivity</button><button data-v="screensaver">With Mac Idle</button></div></div>
         <div class="row dep" data-dep="screen.mode=timeout"><div class="lbl">Turn off after<div class="hint">Minutes without a touch. Press the tablet’s power button to wake it.</div></div>
           <select class="field" data-key="screen.timeoutMinutes" data-num style="width:150px">
             <option value="1">1 minute</option><option value="2">2 minutes</option><option value="5">5 minutes</option><option value="10">10 minutes</option>
             <option value="15">15 minutes</option><option value="30">30 minutes</option><option value="60">1 hour</option><option value="120">2 hours</option></select></div>
-        <div class="row dep" data-dep="screen.mode=screensaver"><div class="lbl">Follows the Mac’s screen saver<div class="hint">The screen turns off when the screen saver starts and back on when it stops (over USB). The lock screen alone doesn’t turn it off.</div></div></div>
+        <div class="row dep" data-dep="screen.mode=screensaver"><div class="lbl">Follows the Mac<div class="hint">The screen turns off when the Mac’s screen saver starts, its displays go to sleep, or the Mac sleeps or logs out, and back on when the Mac is in use again (over USB). The lock screen alone doesn’t turn it off.</div></div></div>
       </div>
 
       <h2>Claude Code usage</h2>
       <div class="group">
-        <div class="row"><div class="lbl">Show Claude tile<div class="hint">Adds a metrics tile with context left in your latest Claude Code session, tokens used today and this week, and the time to your weekly reset. Read from Claude Code’s logs on this Mac.</div></div><label class="switch"><input type="checkbox" data-key="claude.enabled"><i></i></label></div>
-        <div class="row"><div class="lbl">Weekly limit resets<div class="hint">Claude shows the day and time under Settings › Usage. The Mac has no way to look it up.</div></div>
+        <div class="row"><div class="lbl">Show Claude tile<div class="hint">Adds a metrics tile for Claude Code on this Mac. Tap it on the tablet for tokens by day, session and model.</div></div><label class="switch"><input type="checkbox" data-key="claude.enabled"><i></i></label></div>
+        <div class="row"><div class="lbl">Tile shows<div class="hint">Context left in your latest session, or how much of your plan’s 5-hour or weekly limit you’ve used.</div></div>
+          <div class="seg" data-key="claude.tile"><button data-v="context">Context Left</button><button data-v="fiveHour">5-Hour Limit</button><button data-v="weekly">Weekly Limit</button></div></div>
+        <div class="row"><div class="lbl">Plan limits from Claude Code<div class="hint" id="cl-bridge-hint">Claude Code gives its status line your Pro or Max plan’s 5-hour and weekly usage. Connect adds a small status line script that saves those numbers for the dashboard and still runs the status line you already have. Disconnect puts it back.</div></div>
+          <button class="btn" id="cl-bridge">Connect</button></div>
+        <div class="row"><div class="lbl">Weekly limit resets<div class="hint">Filled in from Claude Code once connected and it has reported your limits. Otherwise set it from Claude’s Settings › Usage.</div></div>
           <select class="field" data-key="claude.resetDay" data-num style="width:150px">
             <option value="-1">Not set</option><option value="0">Sunday</option><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option>
             <option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option></select>
@@ -288,6 +294,19 @@
     </section>
 
     <!-- Exchange rates -->
+    <section id="stocks">
+      <h1>Stocks</h1>
+      <div class="group">
+        <div class="row"><div class="lbl">Add a symbol<div class="hint">Company name or ticker: stocks, ETFs, indexes (S&amp;P 500, Nikkei 225…), crypto (BTC-USD) or currencies.</div></div>
+          <input type="text" class="field" id="stk-q" placeholder="Apple, NVDA, ^GSPC…" style="width:220px"><button class="btn primary" id="stk-search">Search</button></div>
+        <div id="stk-results"></div>
+        <div class="row note err" data-err="stocks" hidden></div>
+      </div>
+      <h2>Your symbols (up to 8, four per card)</h2>
+      <div class="group" id="stk-list"></div>
+      <p class="foot">Quotes from Yahoo Finance, updated every 30 seconds while a market is open (exchanges may delay quotes by up to 15–20 minutes) and every 15 minutes otherwise. Each line shows today’s price movement against yesterday’s close.</p>
+    </section>
+
     <section id="exchange">
       <h1>Exchange Rates</h1>
       <div class="group">
